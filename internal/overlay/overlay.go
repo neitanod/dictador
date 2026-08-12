@@ -28,6 +28,13 @@ type UI interface {
 	Close()
 }
 
+// Clickable la implementa la ventanita a la que se le puede hacer click, que
+// es el atajo a la configuración. La notificación del escritorio no la
+// implementa: ahí no hay dónde hacer click.
+type Clickable interface {
+	Clicked() <-chan struct{}
+}
+
 // Nop es la ventanita apagada: la que se usa con overlay.enabled = false.
 type Nop struct{}
 

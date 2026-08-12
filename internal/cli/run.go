@@ -33,6 +33,9 @@ func cmdRun(opts *options, args []string) int {
 		fmt.Fprintf(opts.out.stdout, "dictador escuchando: %s modo %s → acción %s\n",
 			d.Combo().Describe(), cfg.Hotkey.Mode, cfg.Action.OnRelease)
 		fmt.Fprintf(opts.out.stdout, "motor de voz: %s\n", d.EngineLine())
+		if url := d.ConfigURL(); url != "" {
+			fmt.Fprintf(opts.out.stdout, "configuración: %s (o hacé click en la ventanita)\n", url)
+		}
 	}
 	if d.EngineFailed() {
 		// Sin motor no hay dictado posible: decirlo ahora, con la instrucción

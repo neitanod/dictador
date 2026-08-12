@@ -28,6 +28,7 @@ import (
 	"github.com/neitanod/dictador/internal/history"
 	"github.com/neitanod/dictador/internal/overlay"
 	"github.com/neitanod/dictador/internal/stt"
+	"github.com/neitanod/dictador/internal/webconfig"
 	"github.com/neitanod/dictador/internal/x11"
 )
 
@@ -82,6 +83,7 @@ type Daemon struct {
 	conn     *x11.Conn
 	clip     *x11.Clipboard
 	ui       overlay.UI
+	web      *webconfig.Server
 
 	state      state
 	generation int
@@ -138,11 +140,44 @@ func New(cfg config.Config, verbose bool) (*Daemon, error) {
 	d.listener = listener
 
 	d.recorder = audio.New(cfg.Audio.SampleRate, cfg.Audio.Device)
-	if cfg.Overlay.Enabled && overlay.NotifyAvailable() {
-		d.ui = overlay.NewNotify()
+	d.ui = pickUI(cfg, d.log)
+
+	// La configuración se sirve desde el propio daemon: es lo que abre el click
+	// en el overlay, y reemplaza al diálogo de Qt de la versión Python.
+	web, err := webconfig.New(cfg)
+	if err != nil {
+		d.log("sin configuración web: " + err.Error())
+	} else {
+		d.web = web
 	}
+
 	d.buildEngine()
 	return d, nil
+}
+
+// pickUI elige la ventanita: la dibujada si esta sesión la banca, y si no la
+// notificación del escritorio, que es fea pero anda en cualquier lado.
+func pickUI(cfg config.Config, log func(string)) overlay.UI {
+	if !cfg.Overlay.Enabled {
+		return overlay.Nop{}
+	}
+	window, err := overlay.NewWindow(cfg.Overlay)
+	if err == nil {
+		return window
+	}
+	log("sin overlay dibujado (" + err.Error() + "), va por notificaciones")
+	if overlay.NotifyAvailable() {
+		return overlay.NewNotify()
+	}
+	return overlay.Nop{}
+}
+
+// ConfigURL es dónde se sirve la configuración, o "" si no se pudo abrir.
+func (d *Daemon) ConfigURL() string {
+	if d.web == nil {
+		return ""
+	}
+	return d.web.URL()
 }
 
 // Combo es la tecla que quedó escuchando, para poder anunciarla.
@@ -189,6 +224,17 @@ func (d *Daemon) Run() error {
 
 	var armTimer <-chan time.Time
 
+	// El overlay dibujado avisa los clicks; la notificación no tiene dónde
+	// hacer click, y ahí el canal se queda en nil y el select lo ignora.
+	var clicks <-chan struct{}
+	if clickable, ok := d.ui.(overlay.Clickable); ok {
+		clicks = clickable.Clicked()
+	}
+	var saved <-chan webconfig.Values
+	if d.web != nil {
+		saved = d.web.Saved()
+	}
+
 	for {
 		select {
 		case <-d.quit:
@@ -223,6 +269,12 @@ func (d *Daemon) Run() error {
 		case <-d.partialTicker.C:
 			d.requestPartial()
 
+		case <-clicks:
+			d.openSettings()
+
+		case values := <-saved:
+			d.applySettings(values)
+
 		case res := <-d.results:
 			d.onResult(res)
 		}
@@ -249,6 +301,47 @@ func (d *Daemon) preload() {
 		return
 	}
 	d.results <- result{text: fmt.Sprintf("%.1fs", time.Since(started).Seconds()), gen: -1}
+}
+
+// ---- configuración -------------------------------------------------------
+
+// openSettings es el click en el overlay: corta el dictado y abre la config.
+//
+// Cortar primero no es cortesía: si siguiéramos grabando, al soltar la tecla el
+// texto se pegaría en la ventana de configuración o en lo que hubiera detrás.
+func (d *Daemon) openSettings() {
+	if d.state != idle {
+		d.cancel("")
+	} else {
+		d.ui.Dismiss()
+	}
+	if d.web == nil {
+		d.showError("no pude abrir la configuración web")
+		return
+	}
+	if err := d.web.Open(); err != nil {
+		d.showError("no pude abrir el browser: " + err.Error())
+		return
+	}
+	d.log("abrí la configuración en " + d.web.URL())
+}
+
+// applySettings cambia el motor en caliente, sin reiniciar el daemon.
+func (d *Daemon) applySettings(values webconfig.Values) {
+	d.cfg.STT.Engine = values.Engine
+	d.cfg.STT.GoogleAPIKey = values.GoogleAPIKey
+	d.cfg.STT.GoogleLanguage = values.GoogleLanguage
+	d.cfg.STT.ChromeLanguage = values.ChromeLanguage
+	d.modelReady = false
+	if !d.buildEngine() {
+		d.showError(d.engErr)
+		return
+	}
+	if d.web != nil {
+		d.web.Update(d.cfg)
+	}
+	d.log("motor nuevo: " + d.EngineLine())
+	go d.preload()
 }
 
 // ---- eventos de tecla ----------------------------------------------------
@@ -560,6 +653,9 @@ func (d *Daemon) Stop() {
 		d.engine.Close()
 	}
 	d.ui.Close()
+	if d.web != nil {
+		d.web.Close()
+	}
 	d.clip.Close()
 	d.conn.Close()
 }

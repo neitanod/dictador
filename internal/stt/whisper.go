@@ -72,16 +72,27 @@ func WhisperAvailable(opts Options) bool {
 	return NewWhisper(opts).Load() == nil
 }
 
-// Load confirma que el server esté vivo antes del primer dictado.
+// Load confirma que del otro lado haya un whisper-server antes del primer
+// dictado.
+//
+// No alcanza con que algo conteste en ese puerto: en una máquina de desarrollo
+// el 8080 lo ocupa cualquier cosa, y darlo por bueno significa anunciar que
+// Whisper está disponible para fallar recién cuando alguien dicta. La página
+// que sirve whisper.cpp se nombra, así que se la busca.
 func (w *Whisper) Load() error {
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(w.baseURL + "/")
 	if err != nil {
-		return errf("no hay un whisper-server escuchando en %s. Levantalo con "+
+		return errf("no hay nada escuchando en %s. Levantá el whisper-server con "+
 			"`whisper-server -m <modelo>.bin --port 8080`, o elegí el motor chrome.", w.baseURL)
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<10))
+	haystack := strings.ToLower(string(body) + " " + resp.Header.Get("Server"))
+	if !strings.Contains(haystack, "whisper") {
+		return errf("en %s hay algo contestando, pero no parece un whisper-server. "+
+			"Fijate qué está ocupando ese puerto o cambiá stt.whisper_server_url.", w.baseURL)
+	}
 	w.ready = true
 	return nil
 }

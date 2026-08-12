@@ -24,7 +24,18 @@ step "go vet" go vet ./...
 step "tests unitarios" go test ./...
 step "race detector" go test -race ./internal/stt/ ./internal/audio/
 
-# El e2o necesita un display virtual y no está en todas las máquinas: si falta
+printf '\n\033[1m== el overlay dibujado\033[0m\n'
+bash "$ROOT/tests/overlay.sh"
+case "$?" in
+0) printf '\033[32mok\033[0m\n' ;;
+77) printf '\033[33msalteado (falta Xvfb o imagemagick)\033[0m\n' ;;
+*)
+	printf '\033[31mfalló\033[0m\n'
+	FAILED=1
+	;;
+esac
+
+# El e2e necesita un display virtual y no está en todas las máquinas: si falta
 # algo se saltea (77) en vez de dar por fallada la suite.
 printf '\n\033[1m== end-to-end sobre Xvfb\033[0m\n'
 bash "$ROOT/tests/e2e.sh"

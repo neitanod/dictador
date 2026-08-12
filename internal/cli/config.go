@@ -4,10 +4,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/neitanod/dictador/internal/config"
+	"github.com/neitanod/dictador/internal/webconfig"
 )
 
 func cmdConfig(opts *options, args []string) int {
@@ -59,6 +63,9 @@ func cmdConfig(opts *options, args []string) int {
 	case "set":
 		return configSet(opts, rest)
 
+	case "web", "gui":
+		return configWeb(opts)
+
 	case "show":
 		cfg, err := opts.load()
 		if err != nil {
@@ -72,8 +79,46 @@ func cmdConfig(opts *options, args []string) int {
 
 	default:
 		fmt.Fprintf(opts.out.stderr,
-			"dictador config: no conozco %q (show | init | edit | path | set)\n", action)
+			"dictador config: no conozco %q (show | init | edit | path | set | web)\n", action)
 		return 2
+	}
+}
+
+// configWeb abre la ventana de configuración sin el daemon detrás.
+//
+// Es la misma página que sirve el daemon cuando le hacés click al overlay; acá
+// vive lo que dure el comando, y se cierra sola cuando guardás.
+func configWeb(opts *options) int {
+	cfg, err := opts.load()
+	if err != nil {
+		opts.out.fail(err, "CONFIG")
+		return 1
+	}
+	server, err := webconfig.New(cfg)
+	if err != nil {
+		opts.out.fail(err, "CONFIG")
+		return 1
+	}
+	defer server.Close()
+
+	opts.out.info("configuración en %s", server.URL())
+	if err := server.Open(); err != nil {
+		opts.out.info("no pude abrir el browser (%v): entrá vos a %s", err, server.URL())
+	}
+
+	// Se queda hasta que guardes o hasta que te aburras: sin esto el comando
+	// terminaría antes de que el browser llegue a cargar la página.
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	select {
+	case values := <-server.Saved():
+		_ = opts.out.print(values, []string{"guardado: motor " + values.Engine})
+		return 0
+	case <-stop:
+		return 130
+	case <-time.After(10 * time.Minute):
+		opts.out.info("cerré la configuración por inactividad")
+		return 0
 	}
 }
 

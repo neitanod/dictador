@@ -11,12 +11,7 @@ toolkit, and no `xdotool`, `xclip` or `xprop` — X11 is spoken directly — plu
 daemon that is a state machine over channels instead of Qt signals and three
 timers.
 
-```
-┌─ Listening…                                     2.4s ─┐
-│ ▇▇▇▇▇▇▇▇▇▇▇▇▇▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁ │
-│ this is what it's making out while you talk           │
-└───────────────────────────────────────────────────────┘
-```
+![The overlay while you dictate](docs/overlay-parcial.png)
 
 ## Install
 
@@ -89,9 +84,16 @@ dictador config set hotkey.mode toggle
 
 ## Picking an engine
 
-There are three, and switching costs no restart:
+There are three, and switching costs no restart. The comfortable way is to
+**click the little window** while you're dictating: that cuts the dictation short
+and opens the configuration.
+
+![The configuration](docs/config-web.png)
+
+From the terminal too:
 
 ```bash
+dictador config web                      # the same page, without the daemon
 dictador config set stt.engine chrome
 ```
 
@@ -172,7 +174,7 @@ and a billed call.
 | `dictador bench` | compares the engines using your voice |
 | `dictador doctor` | checks everything is where it should be |
 | `dictador keys [filter]` | lists the keys in the current map |
-| `dictador config [show\|init\|edit\|path\|set]` | view or edit the configuration |
+| `dictador config [show\|init\|edit\|path\|set\|web]` | view or edit the configuration |
 | `dictador history [-n N]` | the last dictations |
 | `dictador service [install\|uninstall\|status]` | autostart on login |
 
@@ -263,14 +265,24 @@ activated and the keys are typed at the focus, with any held modifiers released
 first: if you let go of the dictation key with AltGr still down, a synthetic
 Ctrl+V would come out as Ctrl+AltGr+V and paste nothing.
 
+**The overlay is painted by hand.** It's a 32-bit ARGB override-redirect window:
+the window manager doesn't touch it, doesn't decorate it and doesn't give it the
+keyboard, which is what it takes for it not to steal the cursor from the field
+you're dictating into. The frame is rasterized with `x/image` — rounded
+rectangle, antialiased text in whatever font `fc-match` reports — and shipped
+with `PutImage` in bands of rows, because a whole 780-pixel-wide image doesn't
+fit in a single X request.
+
 ## Checking that it works
 
 ```bash
 bash tests/run-all.sh
 ```
 
-Runs `gofmt`, `go vet`, the unit tests, the race detector, and an end-to-end pass
-on a virtual display (`Xvfb`) that walks the whole path: holds the key, records,
+Runs `gofmt`, `go vet`, the unit tests, the race detector, a check that the
+overlay actually paints (it opens the window in each state and measures that the
+screen stops being black, leaving the screenshots behind to look at), and an
+end-to-end pass on a virtual display (`Xvfb`) that walks the whole path: holds the key, records,
 transcribes against a fake engine, and verifies the text reaches the clipboard
 **and** that the synthetic Ctrl+V drops it into a window waiting for a paste.
 It's the only way to know the hotkey, the focus and the paste still work
@@ -285,10 +297,10 @@ portal with `layer-shell` and `libei`, and it isn't there yet.
 **Live text depends on the engine.** With `chrome` and with `faster-whisper` it's
 drawn while you talk; with `google` it isn't, because every partial is billed.
 
-**The little window is still a notification.** The Python version had an overlay
-painted with Qt: translucent, focus-free, with the level meter and the live text.
-Here, for now, it's a desktop notification that updates in place. The
-hand-painted X11 overlay and the local web configuration are what comes next.
+**The little window needs a compositor.** It's painted on a 32-bit ARGB window,
+so a session without compositing would get no transparency. When the screen
+offers no 32-bit visual — or when there's no TrueType font around — the daemon
+says so and falls back to a desktop notification that updates in place.
 
 **Local Whisper needs a separate server.** The binary doesn't carry the model:
 it talks to a `whisper-server` over local HTTP. Putting `libwhisper` inside the

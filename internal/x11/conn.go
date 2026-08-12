@@ -150,3 +150,19 @@ func (f *genericEventFilter) Read(p []byte) (int, error) {
 	f.pending = f.pending[n:]
 	return n, nil
 }
+
+// ARGBVisual busca un visual de 32 bits, que es lo que permite una ventana con
+// transparencia real. Sin uno, el overlay no se puede dibujar translúcido.
+func (c *Conn) ARGBVisual() (xproto.Visualid, byte, bool) {
+	for _, depth := range c.Screen.AllowedDepths {
+		if depth.Depth != 32 {
+			continue
+		}
+		for _, visual := range depth.Visuals {
+			if visual.Class == xproto.VisualClassTrueColor {
+				return visual.VisualId, 32, true
+			}
+		}
+	}
+	return 0, 0, false
+}

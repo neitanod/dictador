@@ -26,7 +26,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        self._reply(b"ok", "text/plain")
+        # El motor se fija en que la página se nombre antes de dar por bueno el
+        # server: cualquier cosa puede estar ocupando ese puerto.
+        self._reply(b"<html><title>whisper.cpp</title></html>", "text/html")
 
     def do_POST(self):
         size = int(self.headers.get("Content-Length", 0))

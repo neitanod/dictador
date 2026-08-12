@@ -11,12 +11,7 @@ gráfico y sin `xdotool`, `xclip` ni `xprop` —X11 se habla directo—, y un da
 que es una máquina de estados con canales en vez de señales de Qt y tres
 temporizadores.
 
-```
-┌─ Escuchando…                                    2.4s ─┐
-│ ▇▇▇▇▇▇▇▇▇▇▇▇▇▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁ │
-│ esto es lo que se va entendiendo mientras hablás      │
-└───────────────────────────────────────────────────────┘
-```
+![El overlay mientras dictás](docs/overlay-parcial.png)
 
 ## Instalación
 
@@ -88,9 +83,15 @@ dictador config set hotkey.mode toggle
 
 ## Elegir motor
 
-Hay tres, y se cambian sin reiniciar nada:
+Hay tres, y se cambian sin reiniciar nada. Lo más cómodo es hacerle **click a la
+ventanita** mientras dictás: eso corta el dictado y abre la configuración.
+
+![La configuración](docs/config-web.png)
+
+También desde la terminal:
 
 ```bash
+dictador config web                      # la misma página, sin el daemon detrás
 dictador config set stt.engine chrome
 ```
 
@@ -170,7 +171,7 @@ red y una llamada facturada.
 | `dictador bench` | compara los motores con tu voz |
 | `dictador doctor` | chequea que todo esté en su lugar |
 | `dictador keys [filtro]` | lista las teclas del mapa actual |
-| `dictador config [show\|init\|edit\|path\|set]` | ver o editar la configuración |
+| `dictador config [show\|init\|edit\|path\|set\|web]` | ver o editar la configuración |
 | `dictador history [-n N]` | los últimos dictados |
 | `dictador service [install\|uninstall\|status]` | autostart en el login |
 
@@ -262,13 +263,23 @@ sintéticos. Se activa la ventana y se teclea al foco, con los modificadores que
 estén hundidos soltados primero: si soltás el dictado con AltGr todavía apretada,
 un Ctrl+V sintético saldría como Ctrl+AltGr+V y no pegaría nada.
 
+**El overlay se dibuja a mano.** Es una ventana ARGB de 32 bits
+override-redirect: el gestor de ventanas no la toca, no la decora y no le da el
+teclado, que es lo que hace falta para que no te robe el cursor del campo al que
+le estás dictando. El cuadro se rasteriza con `x/image` —rectángulo redondeado,
+texto antialiaseado con la fuente que reporte `fc-match`— y se manda con
+`PutImage` en bandas de filas, porque una imagen entera de 780 píxeles de ancho
+no entra en un solo pedido de X.
+
 ## Verificar que anda
 
 ```bash
 bash tests/run-all.sh
 ```
 
-Corre `gofmt`, `go vet`, los tests unitarios, el detector de race conditions, y
+Corre `gofmt`, `go vet`, los tests unitarios, el detector de race conditions, un
+chequeo de que el overlay efectivamente dibuje (abre la ventana en cada estado y
+mide que la pantalla deje de estar negra, dejando las capturas para mirarlas), y
 un end-to-end sobre un display virtual (`Xvfb`) que recorre el camino completo:
 mantiene la tecla, graba, transcribe contra un motor de mentira, y verifica que
 el texto llegue al portapapeles **y** que el Ctrl+V sintético lo deposite en una
@@ -284,11 +295,11 @@ tipear en otra ventana, y eso es a propósito. La salida es el portal
 **El texto en vivo depende del motor.** Con `chrome` y con `faster-whisper` se
 dibuja mientras hablás; con `google` no, porque cada parcial se factura.
 
-**La ventanita todavía es una notificación.** La versión Python tenía un overlay
-dibujado con Qt: translúcido, sin foco, con la barra de nivel y el texto en vivo.
-Acá, por ahora, es una notificación del escritorio que se actualiza en el lugar.
-El overlay dibujado a mano en X11 y la configuración por web local son lo que
-sigue.
+**La ventanita necesita un compositor.** Se dibuja sobre una ventana ARGB de 32
+bits, así que en una sesión sin composición no habría transparencia. Cuando la
+pantalla no ofrece un visual de 32 bits —o cuando no hay ninguna fuente
+TrueType—, el daemon lo dice y cae a una notificación del escritorio que se
+actualiza en el lugar.
 
 **Whisper local necesita un server aparte.** El binario no trae el modelo
 adentro: habla con un `whisper-server` por HTTP local. Meter `libwhisper` en el

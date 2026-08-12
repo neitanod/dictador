@@ -171,7 +171,7 @@ func TestWhisperMandaElWavYLeeElTexto(t *testing.T) {
 	var gotWAV []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
-			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("<html><title>whisper.cpp</title></html>"))
 			return
 		}
 		if err := r.ParseMultipartForm(1 << 20); err != nil {
@@ -212,6 +212,22 @@ func TestWhisperExplicaQueNoHayServer(t *testing.T) {
 	err := engine.Load()
 	if err == nil || !strings.Contains(err.Error(), "whisper-server") {
 		t.Errorf("tendría que decir cómo levantarlo: %v", err)
+	}
+}
+
+// TestWhisperNoConfundeCualquierPuertoOcupado: en una máquina de desarrollo el
+// 8080 lo ocupa cualquier cosa, y darlo por bueno sería anunciar un motor que
+// falla recién cuando alguien dicta.
+func TestWhisperNoConfundeCualquierPuertoOcupado(t *testing.T) {
+	otro := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("soy otra app"))
+	}))
+	defer otro.Close()
+
+	engine := NewWhisper(Options{STT: config.STT{WhisperServerURL: otro.URL}})
+	err := engine.Load()
+	if err == nil || !strings.Contains(err.Error(), "no parece un whisper-server") {
+		t.Errorf("tendría que darse cuenta de que no es whisper: %v", err)
 	}
 }
 

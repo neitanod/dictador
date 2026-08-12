@@ -24,7 +24,7 @@ comandos:
   bench      compara los motores con tu voz para elegir el tuyo
   doctor     chequea que todo lo necesario esté en su lugar
   keys       lista las teclas del mapa actual, para elegir el hotkey
-  config     ver o editar la configuración
+  config     ver o editar la configuración (show | init | edit | path | set | web)
   history    últimos dictados
   service    autostart en el login
   version    qué versión es esta
