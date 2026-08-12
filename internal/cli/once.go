@@ -17,7 +17,7 @@ type onceResult struct {
 	Seconds float64 `json:"seconds"`
 }
 
-func cmdOnce(opts options, args []string) int {
+func cmdOnce(opts *options, args []string) int {
 	fs := subflags("once", opts, opts.out.stderr)
 	seconds := fs.Float64("seconds", 0, "grabar N segundos en vez de esperar Enter")
 	fs.Float64Var(seconds, "s", 0, "grabar N segundos en vez de esperar Enter")
@@ -29,13 +29,11 @@ func cmdOnce(opts options, args []string) int {
 	language := fs.String("language", "", "idioma para esta corrida")
 	device := fs.String("device", "", "fuente de audio")
 	engineName := fs.String("engine", "", "motor para esta corrida")
-	quiet := fs.Bool("quiet", opts.quiet, "sólo el texto")
-	fs.BoolVar(quiet, "q", opts.quiet, "sólo el texto")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	opts.refresh()
 	o := opts.out
-	o.quiet = o.quiet || *quiet
 
 	cfg, err := opts.load()
 	if err != nil {

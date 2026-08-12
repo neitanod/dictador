@@ -28,11 +28,12 @@ type DoctorReport struct {
 	Mode       string  `json:"mode"`
 }
 
-func cmdDoctor(opts options, args []string) int {
+func cmdDoctor(opts *options, args []string) int {
 	fs := subflags("doctor", opts, opts.out.stderr)
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	opts.refresh()
 	cfg, err := opts.load()
 	if err != nil {
 		opts.out.fail(err, "CONFIG")

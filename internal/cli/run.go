@@ -9,13 +9,12 @@ import (
 	"github.com/neitanod/dictador/internal/daemon"
 )
 
-func cmdRun(opts options, args []string) int {
+func cmdRun(opts *options, args []string) int {
 	fs := subflags("run", opts, opts.out.stderr)
-	verbose := fs.Bool("verbose", opts.verbose, "contar lo que va pasando")
-	fs.BoolVar(verbose, "v", opts.verbose, "contar lo que va pasando")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	opts.refresh()
 
 	cfg, err := opts.load()
 	if err != nil {
@@ -23,7 +22,7 @@ func cmdRun(opts options, args []string) int {
 		return 1
 	}
 
-	d, err := daemon.New(cfg, *verbose || opts.verbose)
+	d, err := daemon.New(cfg, opts.verbose)
 	if err != nil {
 		opts.out.fail(err, "STARTUP")
 		return 1

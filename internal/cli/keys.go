@@ -7,11 +7,12 @@ import (
 	"github.com/neitanod/dictador/internal/x11"
 )
 
-func cmdKeys(opts options, args []string) int {
+func cmdKeys(opts *options, args []string) int {
 	fs := subflags("keys", opts, opts.out.stderr)
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	opts.refresh()
 	filter := strings.ToLower(firstArg(fs.Args(), ""))
 
 	conn, err := x11.Open()

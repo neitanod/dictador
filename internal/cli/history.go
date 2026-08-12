@@ -7,13 +7,14 @@ import (
 	"github.com/neitanod/dictador/internal/history"
 )
 
-func cmdHistory(opts options, args []string) int {
+func cmdHistory(opts *options, args []string) int {
 	fs := subflags("history", opts, opts.out.stderr)
 	limit := fs.Int("limit", 20, "cuántos mostrar")
 	fs.IntVar(limit, "n", 20, "cuántos mostrar")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	opts.refresh()
 
 	entries, err := history.Load(*limit)
 	if err != nil {

@@ -27,11 +27,12 @@ func autostartPath() string {
 	return filepath.Join(home, ".config", "autostart", "dictador.desktop")
 }
 
-func cmdService(opts options, args []string) int {
+func cmdService(opts *options, args []string) int {
 	fs := subflags("service", opts, opts.out.stderr)
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	opts.refresh()
 	action := firstArg(fs.Args(), "status")
 	path := autostartPath()
 

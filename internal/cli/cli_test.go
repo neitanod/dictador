@@ -235,3 +235,24 @@ func TestParseValueDistingueTipos(t *testing.T) {
 		t.Errorf("una tecla → %v (%T)", v, v)
 	}
 }
+
+// TestTodosLosSubcomandosRegistranSusFlags corre cada uno con -h, que hace que
+// el FlagSet se arme entero y no se ejecute nada. Sin esto, un flag repetido
+// entre los globales y los del subcomando revienta recién cuando alguien usa
+// ese comando — que fue exactamente lo que pasó con `once -q`.
+func TestTodosLosSubcomandosRegistranSusFlags(t *testing.T) {
+	for _, command := range []string{
+		"run", "once", "bench", "doctor", "keys", "config", "history", "service",
+	} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("%s explotó al armar sus flags: %v", command, r)
+				}
+			}()
+			if code, _, _ := run(t, command, "-h"); code != 2 {
+				t.Errorf("%s -h → %d, quería 2", command, code)
+			}
+		}()
+	}
+}

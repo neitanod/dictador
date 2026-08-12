@@ -81,21 +81,21 @@ func Main(args []string, stdout, stderr io.Writer) int {
 
 	switch command {
 	case "run":
-		return cmdRun(opts, rest)
+		return cmdRun(&opts, rest)
 	case "once":
-		return cmdOnce(opts, rest)
+		return cmdOnce(&opts, rest)
 	case "bench":
-		return cmdBench(opts, rest)
+		return cmdBench(&opts, rest)
 	case "doctor":
-		return cmdDoctor(opts, rest)
+		return cmdDoctor(&opts, rest)
 	case "keys":
-		return cmdKeys(opts, rest)
+		return cmdKeys(&opts, rest)
 	case "config":
-		return cmdConfig(opts, rest)
+		return cmdConfig(&opts, rest)
 	case "history":
-		return cmdHistory(opts, rest)
+		return cmdHistory(&opts, rest)
 	case "service":
-		return cmdService(opts, rest)
+		return cmdService(&opts, rest)
 	case "version":
 		fmt.Fprintf(stdout, "dictador %s\n", Version)
 		return 0
@@ -110,15 +110,33 @@ func Main(args []string, stdout, stderr io.Writer) int {
 }
 
 // load trae la configuración con la que va a trabajar el comando.
-func (o options) load() (config.Config, error) {
+func (o *options) load() (config.Config, error) {
 	return config.Load(o.configPath)
 }
 
 // subflags arma el FlagSet de un subcomando.
-func subflags(name string, _ options, stderr io.Writer) *flag.FlagSet {
+//
+// Los flags globales se registran también acá: la convención dice que van antes
+// del subcomando, y nadie se acuerda de eso a las tres de la mañana. Escritos
+// después ganan, que es lo que uno espera de lo más específico.
+func subflags(name string, opts *options, stderr io.Writer) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	fs.StringVar(&opts.configPath, "config", opts.configPath, "ruta alternativa al config.toml")
+	fs.BoolVar(&opts.json, "json", opts.json, "salida en JSON")
+	fs.BoolVar(&opts.json, "j", opts.json, "salida en JSON")
+	fs.BoolVar(&opts.verbose, "verbose", opts.verbose, "contar lo que va pasando")
+	fs.BoolVar(&opts.verbose, "v", opts.verbose, "contar lo que va pasando")
+	fs.BoolVar(&opts.quiet, "quiet", opts.quiet, "sólo lo esencial")
+	fs.BoolVar(&opts.quiet, "q", opts.quiet, "sólo lo esencial")
 	return fs
+}
+
+// refresh vuelve a armar la salida después de parsear los flags del subcomando,
+// que pueden haber prendido --json o --quiet.
+func (o *options) refresh() {
+	o.out.json = o.json
+	o.out.quiet = o.quiet
 }
 
 // firstArg devuelve el primer argumento suelto, o el default.

@@ -10,13 +10,14 @@ import (
 	"github.com/neitanod/dictador/internal/config"
 )
 
-func cmdConfig(opts options, args []string) int {
+func cmdConfig(opts *options, args []string) int {
 	fs := subflags("config", opts, opts.out.stderr)
 	force := fs.Bool("force", false, "sobrescribir el config existente")
 	fs.BoolVar(force, "f", false, "sobrescribir el config existente")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	opts.refresh()
 	rest := fs.Args()
 	action := "show"
 	if len(rest) > 0 {
@@ -79,7 +80,7 @@ func cmdConfig(opts options, args []string) int {
 // configSet escribe un valor suelto sin pisar los comentarios del archivo.
 //
 //	dictador config set stt.engine chrome
-func configSet(opts options, args []string) int {
+func configSet(opts *options, args []string) int {
 	if len(args) < 2 {
 		fmt.Fprintln(opts.out.stderr,
 			"uso: dictador config set <sección.clave> <valor>   (ej: stt.engine chrome)")

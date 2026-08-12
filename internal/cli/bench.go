@@ -31,7 +31,7 @@ type BenchReport struct {
 // adentro del proceso y cambiarlo era una línea. Acá el modelo lo tiene el
 // whisper-server, así que lo que se compara son los motores: es la elección que
 // hoy tenés a mano.
-func cmdBench(opts options, args []string) int {
+func cmdBench(opts *options, args []string) int {
 	fs := subflags("bench", opts, opts.out.stderr)
 	seconds := fs.Float64("seconds", 6, "cuánto grabar")
 	fs.Float64Var(seconds, "s", 6, "cuánto grabar")
@@ -43,6 +43,7 @@ func cmdBench(opts options, args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	opts.refresh()
 	o := opts.out
 
 	cfg, err := opts.load()
