@@ -28,6 +28,11 @@ type Window struct {
 	current frame
 	mapped  bool
 	size    image.Point
+	// buffer es el pixmap donde se arma el cuadro antes de mostrarlo: pintar
+	// directo sobre la ventana deja ver cuadros a medio hacer, y el overlay se
+	// redibuja doce veces por segundo mientras hablás.
+	buffer     xproto.Pixmap
+	bufferSize image.Point
 
 	hideAt  time.Time
 	clicked chan struct{}
@@ -239,6 +244,9 @@ func (w *Window) Dismiss() {
 func (w *Window) Close() {
 	w.once.Do(func() {
 		close(w.done)
+		if w.buffer != 0 {
+			_ = xproto.FreePixmapChecked(w.conn.X, w.buffer).Check()
+		}
 		w.faces.close()
 		w.conn.Close()
 	})
@@ -330,7 +338,40 @@ func (w *Window) paint() {
 			[]uint32{uint32(int32(x)), uint32(int32(y)),
 				uint32(size.X), uint32(size.Y)}).Check()
 	}
+	if err := w.ensureBuffer(size); err != nil {
+		return
+	}
 	w.put(img)
+	// Recién ahora el cuadro entero aparece, de una.
+	_ = xproto.CopyAreaChecked(w.conn.X, xproto.Drawable(w.buffer),
+		xproto.Drawable(w.win), w.gc, 0, 0, 0, 0,
+		uint16(size.X), uint16(size.Y)).Check()
+}
+
+// ensureBuffer deja un pixmap del tamaño del cuadro.
+func (w *Window) ensureBuffer(size image.Point) error {
+	w.mu.Lock()
+	current := w.bufferSize
+	buffer := w.buffer
+	w.mu.Unlock()
+	if buffer != 0 && current == size {
+		return nil
+	}
+	if buffer != 0 {
+		_ = xproto.FreePixmapChecked(w.conn.X, buffer).Check()
+	}
+	pixmap, err := xproto.NewPixmapId(w.conn.X)
+	if err != nil {
+		return err
+	}
+	if err := xproto.CreatePixmapChecked(w.conn.X, 32, pixmap,
+		xproto.Drawable(w.win), uint16(size.X), uint16(size.Y)).Check(); err != nil {
+		return err
+	}
+	w.mu.Lock()
+	w.buffer, w.bufferSize = pixmap, size
+	w.mu.Unlock()
+	return nil
 }
 
 // position calcula dónde va la ventanita según la configuración.
@@ -360,7 +401,7 @@ func (w *Window) position(size image.Point) (int, int) {
 	return x, y
 }
 
-// put manda la imagen al servidor.
+// put manda la imagen al pixmap de trabajo.
 //
 // Va en bandas de filas porque un PutImage entero no entra en un pedido de X:
 // el máximo son unos 256 KB y el overlay pasa fácil de los 300 KB.
@@ -398,7 +439,7 @@ func (w *Window) put(img *image.RGBA) {
 			}
 		}
 		_ = xproto.PutImageChecked(w.conn.X, xproto.ImageFormatZPixmap,
-			xproto.Drawable(w.win), w.gc,
+			xproto.Drawable(w.buffer), w.gc,
 			uint16(width), uint16(rows), 0, int16(top), 0, 32, data).Check()
 	}
 }
