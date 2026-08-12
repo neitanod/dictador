@@ -63,7 +63,11 @@ type faces struct {
 }
 
 // loadFaces abre el TTF en los dos tamaños que usa el overlay.
-func loadFaces(size int) (*faces, error) {
+//
+// El tamaño va en puntos y el DPI es el de la pantalla, igual que en cualquier
+// toolkit: con los 72 DPI que uno pone sin pensar, un punto se dibuja como un
+// píxel y la letra sale un 25% más chica que en el resto del escritorio.
+func loadFaces(size int, dpi float64) (*faces, error) {
 	path := FontFile()
 	if path == "" {
 		return nil, errNoFont
@@ -76,8 +80,11 @@ func loadFaces(size int) (*faces, error) {
 	if err != nil {
 		return nil, err
 	}
+	if dpi <= 0 {
+		dpi = 96
+	}
 	body, err := opentype.NewFace(parsed, &opentype.FaceOptions{
-		Size: float64(size), DPI: 72, Hinting: font.HintingFull,
+		Size: float64(size), DPI: dpi, Hinting: font.HintingFull,
 	})
 	if err != nil {
 		return nil, err
@@ -87,7 +94,7 @@ func loadFaces(size int) (*faces, error) {
 		smallSize = 8
 	}
 	small, err := opentype.NewFace(parsed, &opentype.FaceOptions{
-		Size: float64(smallSize), DPI: 72, Hinting: font.HintingFull,
+		Size: float64(smallSize), DPI: dpi, Hinting: font.HintingFull,
 	})
 	if err != nil {
 		return nil, err

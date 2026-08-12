@@ -28,10 +28,51 @@ var (
 	colorTrack  = color.NRGBA{60, 60, 72, 255}
 )
 
+// La geometría del cuadro está escrita para 96 DPI, que es lo que declara
+// cualquier pantalla común. En una con más densidad todo se agranda junto: si
+// sólo creciera la letra, el texto se comería el margen.
 const (
-	pad    = 18
-	radius = 16
+	basePad       = 18.0
+	baseRadius    = 16.0
+	baseDot       = 4.5
+	baseLabelX    = 16.0
+	baseBaseline  = 7.0
+	baseBarOffset = 16.0
+	baseBarHeight = 3.0
+	baseBodyTop   = 26.0
+	baseMinHeight = 96.0
 )
+
+// metrics es esa geometría ya llevada al DPI de esta pantalla.
+type metrics struct {
+	pad       int
+	radius    float64
+	dot       float64
+	labelX    int
+	baseline  int
+	barOffset float64
+	barHeight float64
+	bodyTop   int
+	minHeight int
+}
+
+func newMetrics(dpi float64) metrics {
+	if dpi <= 0 {
+		dpi = 96
+	}
+	scale := dpi / 96
+	return metrics{
+		pad:       int(basePad*scale + 0.5),
+		radius:    baseRadius * scale,
+		dot:       baseDot * scale,
+		labelX:    int(baseLabelX*scale + 0.5),
+		baseline:  int(baseBaseline*scale + 0.5),
+		barOffset: baseBarOffset * scale,
+		barHeight: baseBarHeight * scale,
+		bodyTop:   int(baseBodyTop*scale + 0.5),
+		minHeight: int(baseMinHeight*scale + 0.5),
+	}
+}
 
 // frame es lo que hay que dibujar en un momento dado.
 type frame struct {
@@ -57,7 +98,8 @@ func (f frame) accent() color.NRGBA {
 }
 
 // render dibuja el cuadro entero y devuelve la imagen lista para mandar a X.
-func render(f frame, fc *faces) *image.RGBA {
+func render(f frame, fc *faces, m metrics) *image.RGBA {
+	pad := m.pad
 	body := f.text
 	if body == "" {
 		// El placeholder no se repite: cuando dice lo mismo que la etiqueta de
@@ -67,15 +109,16 @@ func render(f frame, fc *faces) *image.RGBA {
 		}
 	}
 	lines := wrap(body, fc.body, f.width-2*pad)
-	height := neededHeight(lines, fc)
+	height := neededHeight(lines, fc, m)
 
 	img := image.NewRGBA(image.Rect(0, 0, f.width, height))
-	roundedRect(img, 0.5, 0.5, float64(f.width)-1, float64(height)-1, radius, colorBG, colorBorder, 1.4)
+	roundedRect(img, 0.5, 0.5, float64(f.width)-1, float64(height)-1, m.radius,
+		colorBG, colorBorder, 1.4)
 
 	accent := f.accent()
 
 	// Punto de estado.
-	circle(img, pad+4.5, pad+2.5, 4.5, accent)
+	circle(img, float64(pad)+m.dot, float64(pad)+m.dot-2, m.dot, accent)
 
 	// Etiqueta. El atajo a la configuración se descubre pasando el mouse por
 	// encima: anunciarlo siempre sería un cartel fijo tapando el estado.
@@ -89,20 +132,22 @@ func render(f frame, fc *faces) *image.RGBA {
 	if label == "" {
 		label = "Dictador"
 	}
-	drawString(img, fc.small, accent, pad+16, pad+7, label)
+	drawString(img, fc.small, accent, pad+m.labelX, pad+m.baseline, label)
 
 	if f.state == "listening" {
 		// Contador de segundos a la derecha.
 		secs := formatSeconds(f.elapsed)
 		w := measure(fc.small, secs)
-		drawString(img, fc.small, colorDim, f.width-pad-w, pad+7, secs)
+		drawString(img, fc.small, colorDim, f.width-pad-w, pad+m.baseline, secs)
 
 		// Barra de nivel.
 		barW := float64(f.width - 2*pad)
-		y := float64(pad + 16)
-		roundedRect(img, pad, y, barW, 3, 1.5, colorTrack, color.NRGBA{}, 0)
+		y := float64(pad) + m.barOffset
+		roundedRect(img, float64(pad), y, barW, m.barHeight, m.barHeight/2,
+			colorTrack, color.NRGBA{}, 0)
 		filled := barW * math.Max(0.02, math.Min(1, f.level))
-		roundedRect(img, pad, y, filled, 3, 1.5, accent, color.NRGBA{}, 0)
+		roundedRect(img, float64(pad), y, filled, m.barHeight, m.barHeight/2,
+			accent, color.NRGBA{}, 0)
 	}
 
 	// Cuerpo del texto.
@@ -111,7 +156,7 @@ func render(f frame, fc *faces) *image.RGBA {
 		textColor = colorDim
 	}
 	lineHeight := fc.body.Metrics().Height.Ceil()
-	y := pad + 26 + fc.body.Metrics().Ascent.Ceil()
+	y := pad + m.bodyTop + fc.body.Metrics().Ascent.Ceil()
 	for _, line := range lines {
 		drawString(img, fc.body, textColor, pad, y, line)
 		y += lineHeight
@@ -148,11 +193,11 @@ func itoa(n int) string {
 	return string(digits)
 }
 
-func neededHeight(lines []string, fc *faces) int {
+func neededHeight(lines []string, fc *faces, m metrics) int {
 	lineHeight := fc.body.Metrics().Height.Ceil()
-	height := pad + 26 + len(lines)*lineHeight + pad
-	if height < 96 {
-		height = 96
+	height := m.pad + m.bodyTop + len(lines)*lineHeight + m.pad
+	if height < m.minHeight {
+		height = m.minHeight
 	}
 	return height
 }
@@ -193,7 +238,7 @@ func drawString(dst *image.RGBA, face font.Face, c color.NRGBA, x, y int, text s
 
 // roundedRect pinta un rectángulo redondeado con relleno y, si el borde tiene
 // alfa, una línea alrededor.
-func roundedRect(dst *image.RGBA, x, y, w, h, r float64, fill, stroke color.NRGBA, strokeWidth float64) {
+func roundedRect(dst *image.RGBA, x, y, w, h, r float64, fill, stroke color.NRGBA, strokeWidth float64) { //nolint:revive
 	if w <= 0 || h <= 0 {
 		return
 	}

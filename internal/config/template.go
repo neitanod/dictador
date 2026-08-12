@@ -55,7 +55,7 @@ screen = "mouse"
 # Y en qué lugar de esa pantalla: top-left | top-center | top-right | center |
 # bottom-left | bottom-center | bottom-right
 position = "bottom-center"
-font_size = 19
+font_size = 19             # en puntos, rasterizados al DPI de tu pantalla
 width = 780
 hide_delay_ms = 1400
 

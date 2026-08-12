@@ -28,6 +28,9 @@ type Window struct {
 	visual   xproto.Visualid
 	depth    byte
 	colormap xproto.Colormap
+	metrics  metrics
+	// scale lleva los tamaños escritos para 96 DPI a los de esta pantalla.
+	scale float64
 
 	mu       sync.Mutex
 	current  frame
@@ -61,20 +64,22 @@ type surface struct {
 // NewWindow abre el overlay. Devuelve error si esta sesión no puede dibujarlo
 // —sin visual de 32 bits o sin fuentes—, y ahí el daemon cae a la notificación.
 func NewWindow(cfg config.Overlay) (*Window, error) {
-	fc, err := loadFaces(cfg.FontSize)
-	if err != nil {
-		return nil, err
-	}
 	conn, err := x11.Open()
 	if err != nil {
-		fc.close()
 		return nil, err
 	}
 	visual, depth, ok := conn.ARGBVisual()
 	if !ok {
 		conn.Close()
-		fc.close()
 		return nil, fmt.Errorf("esta pantalla no tiene un visual de 32 bits: sin transparencia no hay overlay")
+	}
+	// El tamaño de la letra va en puntos, así que hay que saber a qué DPI
+	// dibuja esta pantalla antes de abrir la fuente.
+	dpi := conn.DPI()
+	fc, err := loadFaces(cfg.FontSize, dpi)
+	if err != nil {
+		conn.Close()
+		return nil, err
 	}
 
 	w := &Window{
@@ -83,6 +88,8 @@ func NewWindow(cfg config.Overlay) (*Window, error) {
 		config:   cfg,
 		visual:   visual,
 		depth:    depth,
+		metrics:  newMetrics(dpi),
+		scale:    dpi / x11.DefaultDPI,
 		screen:   cfg.Screen,
 		position: cfg.Position,
 		clicked:  make(chan struct{}, 4),
@@ -322,6 +329,9 @@ func (w *Window) widthFor(monitor x11.Monitor) int {
 	if width <= 0 {
 		width = 780
 	}
+	// El ancho también está escrito para 96 DPI: en una pantalla más densa la
+	// ventanita tiene que crecer igual que la letra, o entra la mitad del texto.
+	width = int(float64(width)*w.scale + 0.5)
 	if max := monitor.Width - 60; max > 120 && width > max {
 		width = max
 	}
@@ -395,7 +405,7 @@ func (w *Window) paint() {
 		if !ok {
 			shot := current
 			shot.width = width
-			img = render(shot, w.faces)
+			img = render(shot, w.faces, w.metrics)
 			frames[width] = img
 		}
 		w.paintSurface(s, img, position)

@@ -106,6 +106,14 @@ dictador config set overlay.position top-right    # y arriba a la derecha de esa
 `dictador doctor` te lista las pantallas conectadas y te dice en cuál va a
 aparecer ahora mismo.
 
+El tamaño de la letra va en `overlay.font_size`, en **puntos**, como en
+cualquier programa: se rasteriza al DPI que declara tu pantalla, así que 19
+puntos acá se ven igual de grandes que 19 puntos en el resto del escritorio.
+
+```bash
+dictador config set overlay.font_size 22
+```
+
 ## Elegir motor
 
 Hay tres, y se cambian sin reiniciar nada. Lo más cómodo es hacerle **click a la
@@ -251,6 +259,7 @@ strip_final_period = false
 enabled = true
 screen = "mouse"           # mouse | focus | primary | all | "HDMI-1"
 position = "bottom-center" # las 4 esquinas, top/bottom-center, o center
+font_size = 19             # en puntos, al DPI de tu pantalla
 hide_delay_ms = 1400
 
 [limits]
@@ -297,6 +306,15 @@ le estás dictando. El cuadro se rasteriza con `x/image` —rectángulo redondea
 texto antialiaseado con la fuente que reporte `fc-match`— y se manda con
 `PutImage` en bandas de filas, porque una imagen entera de 780 píxeles de ancho
 no entra en un solo pedido de X.
+
+**Un punto no es un píxel.** El tamaño de la letra se escribe en puntos, y un
+punto es 1/72 de pulgada: para pasarlo a píxeles hay que saber cuántos entran en
+una pulgada de esta pantalla. Rasterizar a 72 DPI —que es lo que uno pone sin
+pensar— es tomar un punto por un píxel y dejar la letra un 25% más chica que la
+de cualquier toolkit. El DPI sale de `Xft.dpi`, que es lo que miran Qt y GTK, y
+si no está se calcula de las dimensiones físicas que reporta el servidor. Con él
+crece la letra y crece el resto del cuadro: si sólo creciera la letra, el texto
+se comería el margen.
 
 **Las pantallas no son "screens".** En X11 todos tus monitores viven adentro de
 una sola pantalla lógica, pegados en un rectángulo grande, así que

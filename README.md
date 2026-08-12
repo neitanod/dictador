@@ -107,6 +107,14 @@ dictador config set overlay.position top-right    # and in its top right corner
 `dictador doctor` lists the connected screens and tells you which one it will
 show up on right now.
 
+The text size lives in `overlay.font_size`, in **points**, like in any other
+program: it's rasterized at whatever DPI your screen declares, so 19 points here
+look as big as 19 points anywhere else on your desktop.
+
+```bash
+dictador config set overlay.font_size 22
+```
+
 ## Picking an engine
 
 There are three, and switching costs no restart. The comfortable way is to
@@ -253,6 +261,7 @@ strip_final_period = false
 enabled = true
 screen = "mouse"           # mouse | focus | primary | all | "HDMI-1"
 position = "bottom-center" # the 4 corners, top/bottom-center, or center
+font_size = 19             # in points, at your screen's DPI
 hide_delay_ms = 1400
 
 [limits]
@@ -299,6 +308,14 @@ you're dictating into. The frame is rasterized with `x/image` — rounded
 rectangle, antialiased text in whatever font `fc-match` reports — and shipped
 with `PutImage` in bands of rows, because a whole 780-pixel-wide image doesn't
 fit in a single X request.
+
+**A point isn't a pixel.** Text size is written in points, and a point is 1/72
+of an inch: turning that into pixels means knowing how many fit in an inch of
+this screen. Rasterizing at 72 DPI — the number you reach for without thinking —
+treats one point as one pixel and leaves the text 25% smaller than any toolkit
+would draw it. The DPI comes from `Xft.dpi`, which is what Qt and GTK read, and
+failing that from the physical dimensions the server reports. Everything else in
+the frame scales with it: if only the text grew, it would eat the margin.
 
 **Screens aren't "screens".** On X11 all your monitors live inside a single
 logical screen, glued into one big rectangle, so `Screen.WidthInPixels` is the

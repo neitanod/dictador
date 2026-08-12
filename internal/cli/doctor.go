@@ -83,6 +83,10 @@ func cmdDoctor(opts *options, args []string) int {
 		}
 		add(fmt.Sprintf("pantallas (%d)", len(monitors)), len(monitors) > 0,
 			strings.Join(names, " · "))
+		// El DPI decide el tamaño de la letra del overlay: a 72 se vería un
+		// cuarto más chica que el resto del escritorio.
+		add("resolución de la letra", true,
+			fmt.Sprintf("%.0f DPI · %d puntos", conn.DPI(), cfg.Overlay.FontSize))
 		add("la ventanita aparece", true, describePlacement(conn, cfg.Overlay, monitors))
 
 		if _, err := conn.EnableXInput(); err != nil {
