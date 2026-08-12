@@ -48,6 +48,12 @@ strip_final_period = false
 
 [overlay]
 enabled = true
+# En qué pantalla aparece la ventanita: mouse (donde está el puntero) | focus
+# (donde está la ventana que estás usando) | primary | all, o el nombre de una
+# salida ("HDMI-1", "eDP-1") para clavarla siempre en la misma.
+screen = "mouse"
+# Y en qué lugar de esa pantalla: top-left | top-center | top-right | center |
+# bottom-left | bottom-center | bottom-right
 position = "bottom-center"
 font_size = 19
 width = 780

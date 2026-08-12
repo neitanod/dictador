@@ -75,8 +75,13 @@ type Action struct {
 
 // Overlay: la ventanita que muestra lo que vas diciendo.
 type Overlay struct {
-	Enabled     bool   `toml:"enabled"`
-	Position    string `toml:"position"` // bottom-center | top-center | center
+	Enabled bool `toml:"enabled"`
+	// En qué pantalla aparece: mouse | focus | primary | all, o el nombre de
+	// una salida ("HDMI-1") para clavarla siempre en la misma.
+	Screen string `toml:"screen"`
+	// En qué lugar de esa pantalla: las cuatro esquinas, los dos centrados de
+	// arriba y abajo, o al medio.
+	Position    string `toml:"position"`
 	FontSize    int    `toml:"font_size"`
 	Width       int    `toml:"width"`
 	Margin      int    `toml:"margin"`
@@ -141,6 +146,7 @@ func Defaults() Config {
 		},
 		Overlay: Overlay{
 			Enabled:     true,
+			Screen:      "mouse",
 			Position:    "bottom-center",
 			FontSize:    19,
 			Width:       780,

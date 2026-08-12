@@ -35,6 +35,12 @@ type Clickable interface {
 	Clicked() <-chan struct{}
 }
 
+// Placeable la implementa la ventanita a la que se le puede decir en qué
+// pantalla y en qué lugar aparecer.
+type Placeable interface {
+	SetPlacement(screen, position string)
+}
+
 // Nop es la ventanita apagada: la que se usa con overlay.enabled = false.
 type Nop struct{}
 

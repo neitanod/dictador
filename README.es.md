@@ -81,6 +81,31 @@ Si preferís apretar una vez para arrancar y otra para cortar:
 dictador config set hotkey.mode toggle
 ```
 
+### Dónde aparece la ventanita
+
+Por default sale abajo al centro de la pantalla donde está el mouse, que es
+donde estás mirando. Se elige en la configuración, o desde la terminal:
+
+```bash
+dictador config set overlay.screen focus          # donde está la ventana que usás
+dictador config set overlay.position top-right    # y arriba a la derecha de esa
+```
+
+| `overlay.screen` | dónde |
+|---|---|
+| `mouse` | la pantalla donde está el puntero (default) |
+| `focus` | la pantalla donde está la ventana que estás usando |
+| `primary` | siempre la principal |
+| `all` | en todas a la vez |
+| `HDMI-1`, `eDP-1`… | siempre en esa, por su nombre de salida |
+
+`overlay.position` acepta las cuatro esquinas —`top-left`, `top-right`,
+`bottom-left`, `bottom-right`—, los dos centrados —`top-center`,
+`bottom-center`— y `center`.
+
+`dictador doctor` te lista las pantallas conectadas y te dice en cuál va a
+aparecer ahora mismo.
+
 ## Elegir motor
 
 Hay tres, y se cambian sin reiniciar nada. Lo más cómodo es hacerle **click a la
@@ -224,6 +249,8 @@ strip_final_period = false
 
 [overlay]
 enabled = true
+screen = "mouse"           # mouse | focus | primary | all | "HDMI-1"
+position = "bottom-center" # las 4 esquinas, top/bottom-center, o center
 hide_delay_ms = 1400
 
 [limits]
@@ -270,6 +297,13 @@ le estás dictando. El cuadro se rasteriza con `x/image` —rectángulo redondea
 texto antialiaseado con la fuente que reporte `fc-match`— y se manda con
 `PutImage` en bandas de filas, porque una imagen entera de 780 píxeles de ancho
 no entra en un solo pedido de X.
+
+**Las pantallas no son "screens".** En X11 todos tus monitores viven adentro de
+una sola pantalla lógica, pegados en un rectángulo grande, así que
+`Screen.WidthInPixels` es el escritorio entero. Centrar ahí la ventanita en un
+setup de tres monitores la parte al medio, justo sobre el borde entre dos.
+Quién es cada pantalla —y dónde empieza— lo sabe RandR, y de ahí sale la
+elección de en cuál aparecer.
 
 ## Verificar que anda
 

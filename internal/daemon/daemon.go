@@ -332,6 +332,13 @@ func (d *Daemon) applySettings(values webconfig.Values) {
 	d.cfg.STT.GoogleAPIKey = values.GoogleAPIKey
 	d.cfg.STT.GoogleLanguage = values.GoogleLanguage
 	d.cfg.STT.ChromeLanguage = values.ChromeLanguage
+	d.cfg.Overlay.Screen = values.Screen
+	d.cfg.Overlay.Position = values.Position
+	// Dónde aparece la ventanita se cambia sin reiniciar nada: la próxima vez
+	// que dictes ya aparece donde la mandaste.
+	if placeable, ok := d.ui.(overlay.Placeable); ok {
+		placeable.SetPlacement(values.Screen, values.Position)
+	}
 	d.modelReady = false
 	if !d.buildEngine() {
 		d.showError(d.engErr)

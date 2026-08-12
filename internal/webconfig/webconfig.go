@@ -20,7 +20,9 @@ import (
 	"sync"
 
 	"github.com/neitanod/dictador/internal/config"
+	"github.com/neitanod/dictador/internal/overlay"
 	"github.com/neitanod/dictador/internal/stt"
+	"github.com/neitanod/dictador/internal/x11"
 )
 
 //go:embed page.html
@@ -32,6 +34,8 @@ type Values struct {
 	GoogleAPIKey   string `json:"google_api_key"`
 	GoogleLanguage string `json:"google_language"`
 	ChromeLanguage string `json:"chrome_language"`
+	Screen         string `json:"screen"`
+	Position       string `json:"position"`
 }
 
 // Server sirve la página y avisa cuando se guarda.
@@ -99,6 +103,13 @@ func (s *Server) Open() error {
 	return cmd.Start()
 }
 
+// option es una opción de un select: lo que se guarda y lo que se lee.
+type option struct {
+	Value    string
+	Label    string
+	Selected bool
+}
+
 // view es lo que la plantilla necesita saber.
 type view struct {
 	Engine         string
@@ -112,6 +123,9 @@ type view struct {
 	HotkeyLabel    string
 	ConfigPath     string
 	WhisperCommand string
+	Screens        []option
+	Positions      []option
+	Monitors       []x11.Monitor
 }
 
 func (s *Server) snapshot() view {
@@ -156,7 +170,60 @@ func (s *Server) snapshot() view {
 	if v.ConfigPath == "" {
 		v.ConfigPath = config.ConfigPath()
 	}
+
+	v.Monitors = monitors()
+	// Las pantallas conectadas van como opciones más de la lista: elegir una por
+	// nombre es lo que quiere decir "siempre en la misma".
+	for _, s := range overlay.Screens {
+		v.Screens = append(v.Screens, option{
+			Value: s.Value, Label: s.Label, Selected: cfg.Overlay.Screen == s.Value,
+		})
+	}
+	for _, m := range v.Monitors {
+		if m.Name == "" {
+			continue
+		}
+		label := "siempre en " + m.Name
+		if m.Primary {
+			label += " (principal)"
+		}
+		v.Screens = append(v.Screens, option{
+			Value: m.Name, Label: label, Selected: cfg.Overlay.Screen == m.Name,
+		})
+	}
+	for _, p := range overlay.Positions {
+		v.Positions = append(v.Positions, option{
+			Value: p.Value, Label: p.Label, Selected: cfg.Overlay.Position == p.Value,
+		})
+	}
+	if !anySelected(v.Screens) && len(v.Screens) > 0 {
+		v.Screens[0].Selected = true
+	}
+	if !anySelected(v.Positions) {
+		for i := range v.Positions {
+			v.Positions[i].Selected = v.Positions[i].Value == "bottom-center"
+		}
+	}
 	return v
+}
+
+func anySelected(options []option) bool {
+	for _, o := range options {
+		if o.Selected {
+			return true
+		}
+	}
+	return false
+}
+
+// monitors lista las pantallas conectadas, o nada si no hay display.
+func monitors() []x11.Monitor {
+	conn, err := x11.Open()
+	if err != nil {
+		return nil
+	}
+	defer conn.Close()
+	return conn.Monitors()
 }
 
 func orElse(value, fallback string) string {
@@ -213,10 +280,21 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	if engine == "whisper" {
 		stored = "faster-whisper"
 	}
+	screen := strings.TrimSpace(values.Screen)
+	if screen == "" {
+		screen = "mouse"
+	}
+	position := strings.TrimSpace(values.Position)
+	if !overlay.ValidPosition(position) {
+		position = "bottom-center"
+	}
+
 	settings := []config.Setting{
 		{Section: "stt", Key: "engine", Value: stored},
 		{Section: "stt", Key: "google_language", Value: locale},
 		{Section: "stt", Key: "chrome_language", Value: locale},
+		{Section: "overlay", Key: "screen", Value: screen},
+		{Section: "overlay", Key: "position", Value: position},
 	}
 	if !s.snapshot().KeyFromEnv {
 		settings = append(settings,
@@ -235,6 +313,8 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	cfg.STT.Engine = stored
 	cfg.STT.GoogleLanguage = locale
 	cfg.STT.ChromeLanguage = locale
+	cfg.Overlay.Screen = screen
+	cfg.Overlay.Position = position
 	if !s.snapshot().KeyFromEnv {
 		cfg.STT.GoogleAPIKey = strings.TrimSpace(values.GoogleAPIKey)
 	}
@@ -248,6 +328,8 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		GoogleAPIKey:   cfg.STT.GoogleAPIKey,
 		GoogleLanguage: locale,
 		ChromeLanguage: locale,
+		Screen:         screen,
+		Position:       position,
 	}
 	select {
 	case s.saved <- out:

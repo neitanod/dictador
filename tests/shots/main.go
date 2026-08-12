@@ -4,7 +4,7 @@
 // test, así que lo mínimo es poder verlo sin tener que dictar. Corre contra un
 // Xvfb y deja los PNG donde se le diga.
 //
-//	shots <directorio>
+//	shots <directorio> [pantalla] [lugar]
 package main
 
 import (
@@ -32,6 +32,12 @@ func main() {
 	// el centro de la pantalla, y si la ventanita cayera ahí las capturas
 	// saldrían todas en estado hover.
 	cfg.Position = "bottom-center"
+	if len(os.Args) > 2 {
+		cfg.Screen = os.Args[2]
+	}
+	if len(os.Args) > 3 {
+		cfg.Position = os.Args[3]
+	}
 	window, err := overlay.NewWindow(cfg)
 	if err != nil {
 		fail(err)

@@ -82,6 +82,31 @@ If you'd rather press once to start and again to stop:
 dictador config set hotkey.mode toggle
 ```
 
+### Where the little window shows up
+
+By default it comes up at the bottom center of the screen the mouse is on, which
+is where you're looking. Pick it in the configuration, or from the terminal:
+
+```bash
+dictador config set overlay.screen focus          # the screen with the window you're using
+dictador config set overlay.position top-right    # and in its top right corner
+```
+
+| `overlay.screen` | where |
+|---|---|
+| `mouse` | the screen the pointer is on (default) |
+| `focus` | the screen with the window you're using |
+| `primary` | always the primary one |
+| `all` | on every screen at once |
+| `HDMI-1`, `eDP-1`… | always that one, by output name |
+
+`overlay.position` takes the four corners — `top-left`, `top-right`,
+`bottom-left`, `bottom-right` —, the two centered ones — `top-center`,
+`bottom-center` — and `center`.
+
+`dictador doctor` lists the connected screens and tells you which one it will
+show up on right now.
+
 ## Picking an engine
 
 There are three, and switching costs no restart. The comfortable way is to
@@ -226,6 +251,8 @@ strip_final_period = false
 
 [overlay]
 enabled = true
+screen = "mouse"           # mouse | focus | primary | all | "HDMI-1"
+position = "bottom-center" # the 4 corners, top/bottom-center, or center
 hide_delay_ms = 1400
 
 [limits]
@@ -272,6 +299,13 @@ you're dictating into. The frame is rasterized with `x/image` — rounded
 rectangle, antialiased text in whatever font `fc-match` reports — and shipped
 with `PutImage` in bands of rows, because a whole 780-pixel-wide image doesn't
 fit in a single X request.
+
+**Screens aren't "screens".** On X11 all your monitors live inside a single
+logical screen, glued into one big rectangle, so `Screen.WidthInPixels` is the
+whole desktop. Centering the little window there on a three-monitor setup splits
+it down the middle, right over the seam between two of them. Which monitor is
+which — and where it starts — is something RandR knows, and that's where the
+choice of screen comes from.
 
 ## Checking that it works
 

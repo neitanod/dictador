@@ -55,6 +55,12 @@
   .inline { display: flex; gap: 14px; align-items: flex-end; }
   .inline .field:first-child { flex: 1; }
   .inline .field:last-child { width: 130px; }
+  .inline .field.wide { width: 230px; }
+  select {
+    width: 100%; background: var(--card); border: 1px solid var(--line);
+    border-radius: 7px; padding: 9px 11px; color: var(--text); font-size: 14px;
+  }
+  select:focus { outline: 2px solid var(--go-hover); outline-offset: -1px; }
   .show { color: var(--dim); font-size: 12px; display: flex; gap: 6px; align-items: center; margin-top: 6px; }
   hr { border: 0; border-top: 1px solid #2a2a34; margin: 22px 0; }
   footer { display: flex; align-items: center; gap: 12px; margin-top: 22px; }
@@ -134,6 +140,36 @@
       <label class="show"><input type="checkbox" id="show"> mostrar la key</label>
     {{end}}
 
+    <hr>
+
+    <fieldset>
+      <legend>¿Dónde querés que aparezca la ventanita?</legend>
+      <div class="inline">
+        <div class="field">
+          <label for="screen">Pantalla</label>
+          <select id="screen">
+            {{range .Screens}}
+              <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+            {{end}}
+          </select>
+        </div>
+        <div class="field wide">
+          <label for="position">Lugar</label>
+          <select id="position">
+            {{range .Positions}}
+              <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+            {{end}}
+          </select>
+        </div>
+      </div>
+      {{if gt (len .Monitors) 1}}
+        <p class="hint" style="margin-left:0">
+          Tenés {{len .Monitors}} pantallas:
+          {{range $i, $m := .Monitors}}{{if $i}}, {{end}}<strong>{{$m.Name}}</strong> ({{$m.Width}}×{{$m.Height}}){{end}}.
+        </p>
+      {{end}}
+    </fieldset>
+
     <footer>
       <button type="submit">Guardar</button>
       <span id="message"></span>
@@ -169,12 +205,14 @@
         google_api_key: key.value,
         google_language: language,
         chrome_language: language,
+        screen: document.getElementById('screen').value,
+        position: document.getElementById('position').value,
       }),
     });
     const body = await answer.json();
     if (answer.ok) {
       message.className = 'ok';
-      message.textContent = 'guardado — ya está andando con ese motor';
+      message.textContent = 'guardado — ya está andando así';
     } else {
       message.className = 'error';
       message.textContent = body.error || 'no pude guardar';

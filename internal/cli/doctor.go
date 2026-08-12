@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/neitanod/dictador/internal/audio"
+	"github.com/neitanod/dictador/internal/config"
 	"github.com/neitanod/dictador/internal/overlay"
 	"github.com/neitanod/dictador/internal/stt"
 	"github.com/neitanod/dictador/internal/x11"
@@ -68,6 +69,21 @@ func cmdDoctor(opts *options, args []string) int {
 	} else {
 		defer conn.Close()
 		add("conexión X11", true, display)
+
+		// Dónde aparece la ventanita es la clase de cosa que uno mira acá
+		// cuando aparece en la pantalla equivocada.
+		monitors := conn.Monitors()
+		names := make([]string, 0, len(monitors))
+		for _, m := range monitors {
+			label := fmt.Sprintf("%s %dx%d en (%d,%d)", m.Name, m.Width, m.Height, m.X, m.Y)
+			if m.Primary {
+				label += " principal"
+			}
+			names = append(names, label)
+		}
+		add(fmt.Sprintf("pantallas (%d)", len(monitors)), len(monitors) > 0,
+			strings.Join(names, " · "))
+		add("la ventanita aparece", true, describePlacement(conn, cfg.Overlay, monitors))
 
 		if _, err := conn.EnableXInput(); err != nil {
 			add("XInput2", false, err.Error())
@@ -142,6 +158,47 @@ func cmdDoctor(opts *options, args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// describePlacement cuenta en qué pantalla y en qué lugar va a aparecer el
+// overlay ahora mismo, ya resuelto: "donde está el mouse" no le dice a nadie si
+// eso hoy es la laptop o la tele.
+func describePlacement(conn *x11.Conn, cfg config.Overlay, monitors []x11.Monitor) string {
+	where := cfg.Screen
+	if where == "" {
+		where = "mouse"
+	}
+	resolved := ""
+	switch where {
+	case "all":
+		resolved = "en todas"
+	case "primary":
+		if m, ok := x11.PrimaryMonitor(monitors); ok {
+			resolved = m.Name
+		}
+	case "focus":
+		if m, ok := conn.FocusMonitor(monitors); ok {
+			resolved = m.Name
+		}
+	case "mouse":
+		if m, ok := conn.PointerMonitor(monitors); ok {
+			resolved = m.Name
+		}
+	default:
+		if _, ok := x11.MonitorByName(monitors, where); ok {
+			resolved = where
+		} else {
+			resolved = where + " (que ahora no está conectada)"
+		}
+	}
+	position := cfg.Position
+	if position == "" {
+		position = "bottom-center"
+	}
+	if resolved == "" {
+		return where + ", " + position
+	}
+	return fmt.Sprintf("%s → %s, %s", where, resolved, position)
 }
 
 // microphone es la primera fuente de entrada real que reporta pactl.
