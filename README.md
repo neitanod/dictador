@@ -155,7 +155,9 @@ dictador commands --try "entre corchetes nota barra dos"
 | what you say | what happens |
 |---|---|
 | `punto y aparte` | `.` and a new line |
-| `punto y seguido` · `coma` · `punto y coma` | `.` · `,` · `;` |
+| `punto y seguido` · `punto final` | `.` |
+| `coma` · `palabra coma` | `,` |
+| `punto y coma` | `;` |
 | `abre pregunta` · `signo de pregunta` | `¿` · `?` |
 | `abre admiración` · `signo de admiración` | `¡` · `!` |
 | `entre corchetes` · `entre paréntesis` · `entre comillas` | writes the pair and leaves the cursor inside |
@@ -177,7 +179,23 @@ and `espacio` doesn't: "el alfajor Capitán del Espacio es muy rico" has to come
 out untouched. If one still gets in your way — `coma` and `barra` are everyday
 words — you can turn it off without touching code.
 
-Yours go in the config, and that's also where the built-in ones get turned off:
+`punto final` is the exception, and it was asked for on purpose: dictating, it
+comes up far more often as a request for a period than as a way to close a
+matter. The cost is that "le puso punto final al asunto" comes out cut short,
+and whoever prefers it the other way turns it off from the window.
+
+**Yours get added from the configuration page.** The *Editar los comandos…*
+button opens a window with the whole table — the built-in ones and yours — where
+you change what any of them writes, turn one off, or add the one you're missing.
+It's one row and it's working, with nothing to restart.
+
+![The command editor](docs/config-comandos.png)
+
+The ones that send keys or delete — `enter`, `entre corchetes`, `borrá eso` —
+show up but can't be edited: what they do isn't text, and no config value would
+write it. Turning them off does work.
+
+It's the same config.toml, and by hand it looks like this:
 
 ```toml
 [commands]
@@ -311,7 +329,9 @@ Exit codes: `0` fine · `1` error · `2` usage error · `130` cancelled with Ctr
 
 It lives in `~/.config/dictador/config.toml`. `dictador config init` creates it
 with every value commented, and `dictador config edit` opens it in your
-`$EDITOR`.
+`$EDITOR`. On the configuration screen the path is a link: clicking it opens the
+file with whatever editor you have — `$VISUAL` or `$EDITOR` first, and if they
+say nothing, the text editor that happens to be installed.
 
 If it doesn't exist yet but the Python `dictado` one does
 (`~/.config/dictado/config.toml`), that one is read: the port starts with the
@@ -319,6 +339,15 @@ configuration the machine already had.
 
 **Saving doesn't clobber the comments.** `dictador config set` edits the line
 that changes and leaves the rest of the file alone, comments included.
+
+**The file is re-read on its own.** The daemon watches the config.toml while it
+runs, and a second after you save it is already working with the new values: the
+engine is rebuilt if anything under `[stt]` changed, and the little window moves
+if you changed its screen or position. Three things are grabbed once at startup
+— the hotkey, the microphone and whether the window exists at all — and those it
+tells you to restart for. A syntax error is reported and the old configuration
+keeps running, and if you were dictating when you saved, the re-read waits until
+you're done.
 
 ```toml
 [hotkey]

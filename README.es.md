@@ -149,7 +149,9 @@ dictador commands --try "entre corchetes nota barra dos"
 | lo que decís | lo que pasa |
 |---|---|
 | `punto y aparte` | `.` y salta a la línea siguiente |
-| `punto y seguido` · `coma` · `punto y coma` | `.` · `,` · `;` |
+| `punto y seguido` · `punto final` | `.` |
+| `coma` · `palabra coma` | `,` |
+| `punto y coma` | `;` |
 | `abre pregunta` · `signo de pregunta` | `¿` · `?` |
 | `abre admiración` · `signo de admiración` | `¡` · `!` |
 | `entre corchetes` · `entre paréntesis` · `entre comillas` | escribe el par y deja el cursor adentro |
@@ -171,7 +173,23 @@ texto.** Por eso existe `signo mayor` y no `mayor`, y `espacio espacio` y no
 cual. Si alguno te molesta igual —`coma` y `barra` son palabras de todos los
 días— se apaga sin tocar código.
 
-Los tuyos van en el config, y ahí mismo se apagan los de fábrica:
+`punto final` es la excepción que se pidió a propósito: dictando se dice mucho
+más seguido para pedir el punto que hablando para cerrar un asunto. El costo es
+que "le puso punto final al asunto" sale cortado, y quien prefiera lo contrario
+lo apaga desde la ventana.
+
+**Los tuyos se agregan desde la configuración.** El botón *Editar los comandos…*
+abre una ventana con la tabla entera —los de fábrica y los tuyos—: ahí cambiás lo
+que escribe cualquiera, lo apagás, o agregás el que te falta. Es un renglón y ya
+anda, sin reiniciar el dictado.
+
+![El editor de comandos](docs/config-comandos.png)
+
+Los que mandan teclas o borran —`enter`, `entre corchetes`, `borrá eso`— se ven
+pero no se editan: lo que hacen no es texto y no hay valor de config que lo
+escriba. Apagarlos sí se puede.
+
+Es el mismo config.toml, y a mano se escribe así:
 
 ```toml
 [commands]
@@ -304,6 +322,9 @@ Ctrl+C.
 
 Vive en `~/.config/dictador/config.toml`. `dictador config init` lo crea con
 todos los valores comentados, y `dictador config edit` lo abre en tu `$EDITOR`.
+En la pantalla de configuración la ruta es un link: al hacerle click el archivo
+se abre con el editor que tengas —lo que digan `$VISUAL` o `$EDITOR` primero, y
+si no dicen nada, el editor de texto que esté instalado—.
 
 Si todavía no existe pero está el del `dictado` en Python
 (`~/.config/dictado/config.toml`), se lee ese: el port arranca con la
@@ -312,6 +333,15 @@ configuración que la máquina ya tenía.
 **Guardar no pisa los comentarios.** `dictador config set` edita la línea que
 cambia y deja el resto del archivo intacto, incluidos los comentarios que
 explican cada valor.
+
+**El archivo se relee solo.** El dictador mira el config.toml mientras corre, y
+un segundo después de que lo guardes ya está andando con lo nuevo: el motor se
+rearma si cambiaste algo de `[stt]`, y la ventanita se muda si le cambiaste la
+pantalla o el lugar. Tres cosas se agarran una sola vez al arrancar —la tecla,
+el micrófono y que la ventanita exista— y esas te las avisa para que reinicies.
+Si el archivo quedó con un error de sintaxis te lo dice y sigue andando con lo
+de antes, y si estabas dictando cuando lo guardaste, la relectura espera a que
+termines.
 
 ```toml
 [hotkey]

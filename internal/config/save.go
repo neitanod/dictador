@@ -43,8 +43,108 @@ func Save(path string, values []Setting) (string, error) {
 	for _, v := range values {
 		lines = writeOne(lines, v.Section, v.Key, v.Value)
 	}
-	out := strings.Join(lines, "\n") + "\n"
-	return path, os.WriteFile(path, []byte(out), 0o644)
+	return path, writeLines(path, lines)
+}
+
+// Pair es una entrada de una tabla del config: la clave tal como se dice y su
+// valor. Se guardan en orden, que es el que se va a leer después en el archivo.
+type Pair struct {
+	Key   string
+	Value string
+}
+
+// SaveTable reescribe una tabla entera —una sección con sus claves y nada
+// más— dejando exactamente las entradas que se le pasan.
+//
+// [Save] no alcanza para esto: sabe cambiar y agregar claves, y no sabe sacar
+// las que el usuario borró. Una tabla como [commands.replacements] es una
+// lista, no un puñado de valores sueltos, y guardarla es escribirla entera.
+//
+// Los comentarios se quedan donde están. Los que están pegados abajo del
+// header explican esa tabla y siguen ahí arriba; el bloque de comentarios que
+// arranca después de un renglón en blanco al final es el que le presenta la
+// sección que sigue, así que las entradas se meten antes y no lo empujan.
+func SaveTable(path, section string, pairs []Pair) (string, error) {
+	if path == "" {
+		path = ConfigPath()
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return path, err
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		if err := os.WriteFile(path, []byte(Template), 0o644); err != nil {
+			return path, err
+		}
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return path, err
+	}
+	lines := splitLines(string(raw))
+
+	rendered := make([]string, 0, len(pairs))
+	for _, p := range pairs {
+		rendered = append(rendered, tomlValue(p.Key)+" = "+tomlValue(p.Value))
+	}
+
+	start, end := -1, -1 // el cuerpo de la sección, sin el header
+	for i, line := range lines {
+		header := headerRe.FindStringSubmatch(line)
+		if header == nil {
+			continue
+		}
+		if start >= 0 {
+			end = i
+			break
+		}
+		if strings.TrimSpace(header[1]) == section {
+			start = i + 1
+		}
+	}
+	if start < 0 { // la tabla no estaba
+		out := append(append([]string{}, lines...), "", "["+section+"]")
+		return path, writeLines(path, append(out, rendered...))
+	}
+	if end < 0 {
+		end = len(lines)
+	}
+
+	var body []string
+	for _, line := range lines[start:end] {
+		if isComment(line) {
+			body = append(body, line)
+		}
+	}
+	cut := cutoff(body)
+	head, tail := body[:cut], body[cut:]
+
+	out := append([]string{}, lines[:start]...)
+	out = append(out, head...)
+	out = append(out, rendered...)
+	out = append(out, tail...)
+	return path, writeLines(path, append(out, lines[end:]...))
+}
+
+// isComment dice si un renglón no es una asignación: un comentario o un vacío.
+func isComment(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return trimmed == "" || strings.HasPrefix(trimmed, "#")
+}
+
+// cutoff es dónde empieza el bloque final de comentarios que ya no habla de
+// esta tabla: el último renglón en blanco que no tiene nada más que
+// comentarios detrás.
+func cutoff(body []string) int {
+	for i := len(body) - 1; i >= 0; i-- {
+		if strings.TrimSpace(body[i]) == "" {
+			return i
+		}
+	}
+	return len(body)
+}
+
+func writeLines(path string, lines []string) error {
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
 }
 
 // Init deja el config.toml de ejemplo en su lugar. Con force lo sobrescribe.

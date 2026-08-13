@@ -370,6 +370,8 @@ func (d *Daemon) applySettings(values webconfig.Values) {
 	d.cfg.Overlay.Screen = values.Screen
 	d.cfg.Overlay.Position = values.Position
 	d.cfg.Commands.Enabled = values.Commands
+	d.cfg.Commands.Replacements = values.Replacements
+	d.cfg.Action.TrailingSpace = values.TrailingSpace
 	// Dónde aparece la ventanita se cambia sin reiniciar nada: la próxima vez
 	// que dictes ya aparece donde la mandaste.
 	if placeable, ok := d.ui.(overlay.Placeable); ok {

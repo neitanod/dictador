@@ -145,12 +145,16 @@ func TestEspacioEspacioSonDosEspacios(t *testing.T) {
 // Los comandos son frases que uno dice cuando habla de editar texto. Las
 // palabras que aparecen en cualquier charla no pueden ser comandos, aunque
 // nombren al signo: "el alfajor Capitán del Espacio es muy rico".
+//
+// "punto final" es la excepción, y se pidió a propósito: dictando se dice mucho
+// más seguido para pedir el punto que hablando para cerrar un asunto. Se paga
+// que "le puso punto final al asunto" salga cortado, y se apaga desde la ventana
+// de comandos al que le moleste.
 func TestLasPalabrasComunesNoSonComandos(t *testing.T) {
 	cases := map[string]string{
 		"el alfajor Capitán del Espacio es muy rico": "el alfajor Capitán del Espacio es muy rico",
 		"un número mayor que el otro":                "un número mayor que el otro",
 		"dejá un espacio en blanco":                  "dejá un espacio en blanco",
-		"le puso punto final al asunto":              "le puso punto final al asunto",
 		"borralo cuando puedas":                      "borralo cuando puedas",
 	}
 	for said, want := range cases {

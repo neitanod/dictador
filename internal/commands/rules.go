@@ -51,9 +51,18 @@ var longestBuiltin int
 // todo—, que es lo que se lista en `dictador commands`.
 var catalog = map[string]rule{
 	// Puntuación
+	//
+	// "punto final" y "palabra coma" son las dos maneras largas de pedir lo
+	// mismo que "punto y seguido" y "coma". Están porque el que dicta las dice:
+	// "coma" es una palabra de todos los días y "punto" también, así que cuando
+	// uno quiere el signo y no la palabra tiende a alargar la frase para que se
+	// entienda. Que las dos formas anden es más barato que acordarse de cuál es
+	// la que este programa espera.
 	"punto y aparte":  {emit: ".", tightLeft: true, keys: []string{"Return"}},
 	"punto y seguido": closing("."),
+	"punto final":     closing("."),
 	"coma":            closing(","),
+	"palabra coma":    closing(","),
 	"punto y coma":    closing(";"),
 
 	// Interrogación y admiración, que en castellano abren y cierran
@@ -208,6 +217,91 @@ func List(opts Options) []Command {
 	sort.Slice(out, func(i, j int) bool { return out[i].Say < out[j].Say })
 	return out
 }
+
+// Entry es una fila del editor de comandos: la frase que se dice, lo que
+// escribe hoy, y de dónde salió ese "hoy".
+//
+// List alcanza para mostrar los comandos, y no para editarlos: el que edita
+// necesita saber además qué escribía de fábrica el que tocó —para poder
+// volver atrás— y cuáles no se pueden escribir en el config, que son los que
+// mandan teclas o borran.
+type Entry struct {
+	// Key es la frase normalizada, que es con la que se matchea y la única
+	// forma de saber que "guión" del catálogo y "guion" del config son el
+	// mismo comando.
+	Key    string   `json:"key"`
+	Say    string   `json:"say"`
+	Writes string   `json:"writes"`
+	Keys   []string `json:"keys,omitempty"`
+	Note   string   `json:"note,omitempty"`
+	// Default es lo que escribía de fábrica, para poder volver a eso.
+	Default string `json:"default,omitempty"`
+	Builtin bool   `json:"builtin,omitempty"`
+	// Changed dice que hay un reemplazo tuyo con esta frase, sea porque la
+	// agregaste, porque pisaste un comando de fábrica o porque lo apagaste.
+	Changed bool `json:"changed,omitempty"`
+	Off     bool `json:"off,omitempty"`
+	// Fixed son los que hacen algo que no es escribir texto —una tecla, un
+	// borrado—, y por eso no hay valor de config que los reproduzca.
+	Fixed bool `json:"fixed,omitempty"`
+}
+
+// Entries son todos los comandos como los ve el editor: los de fábrica con lo
+// que escriben, pisados por los tuyos donde los haya, y los tuyos que no
+// corresponden a ninguno de fábrica.
+func Entries(opts Options) []Entry {
+	out := make([]Entry, 0, len(catalog)+len(opts.Replacements))
+	at := make(map[string]int, len(catalog))
+	for phrase, r := range catalog {
+		key := normalizePhrase(phrase)
+		at[key] = len(out)
+		out = append(out, Entry{
+			Key:     key,
+			Say:     phrase,
+			Writes:  r.emit,
+			Keys:    r.keys,
+			Note:    describe(phrase, r, false).Note,
+			Default: r.emit,
+			Builtin: true,
+			Fixed:   r.op != opNone || len(r.keys) > 0,
+		})
+	}
+	for phrase, emit := range opts.Replacements {
+		key := normalizePhrase(phrase)
+		if key == "" {
+			continue
+		}
+		// La frase que se muestra es la tuya y no la del catálogo: es la que
+		// está en tu archivo, y las dos matchean igual.
+		e := Entry{Key: key, Say: phrase, Writes: emit, Changed: true, Off: emit == ""}
+		i, builtin := at[key]
+		if builtin {
+			e.Builtin = true
+			e.Default = out[i].Default
+			e.Note = out[i].Note
+			// Apagado se sigue viendo lo que hacía; pisado con texto, no: un
+			// reemplazo tuyo escribe eso y nada más, sin las teclas de antes.
+			if e.Off {
+				e.Keys, e.Fixed = out[i].Keys, out[i].Fixed
+			}
+			out[i] = e
+			continue
+		}
+		at[key] = len(out)
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Key != out[j].Key {
+			return out[i].Key < out[j].Key
+		}
+		return out[i].Say < out[j].Say
+	})
+	return out
+}
+
+// NormalizePhrase deja una frase como se la busca en el diccionario, que es lo
+// que hace falta afuera para saber si dos frases son el mismo comando.
+func NormalizePhrase(phrase string) string { return normalizePhrase(phrase) }
 
 func describe(phrase string, r rule, custom bool) Command {
 	cmd := Command{Say: phrase, Writes: r.emit, Keys: r.keys, Custom: custom}

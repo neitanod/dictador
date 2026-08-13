@@ -16,9 +16,14 @@ import (
 	"html/template"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/neitanod/dictador/internal/commands"
 	"github.com/neitanod/dictador/internal/config"
@@ -31,6 +36,10 @@ import (
 var pageFS embed.FS
 
 // Values es lo que la página puede cambiar.
+//
+// Va entero en cada aviso, incluso lo que el formulario que guardó no tocó:
+// del otro lado se aplica tal cual, y un campo que viajara vacío borraría lo
+// que el otro formulario acababa de guardar.
 type Values struct {
 	Engine         string `json:"engine"`
 	GoogleAPIKey   string `json:"google_api_key"`
@@ -39,6 +48,10 @@ type Values struct {
 	Screen         string `json:"screen"`
 	Position       string `json:"position"`
 	Commands       bool   `json:"commands"`
+	TrailingSpace  bool   `json:"trailing_space"`
+	// Replacements son los comandos hablados que el usuario cambió, agregó o
+	// apagó, indexados por la frase tal como la dice.
+	Replacements map[string]string `json:"replacements"`
 }
 
 // Server sirve la página y avisa cuando se guarda.
@@ -51,6 +64,10 @@ type Server struct {
 	quit     chan struct{}
 	quitOnce sync.Once
 	tmpl     *template.Template
+	// edit abre el config.toml en un editor. Es un campo y no una llamada
+	// directa para que las pruebas puedan pedirlo sin que se abra un editor de
+	// verdad en la máquina del que las corre.
+	edit func(path string) error
 }
 
 // New levanta el server en un puerto al azar de loopback.
@@ -72,10 +89,13 @@ func New(cfg config.Config) (*Server, error) {
 		saved:    make(chan Values, 4),
 		quit:     make(chan struct{}),
 		tmpl:     tmpl,
+		edit:     openEditor,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handlePage)
 	mux.HandleFunc("/save", s.handleSave)
+	mux.HandleFunc("/commands", s.handleCommands)
+	mux.HandleFunc("/edit", s.handleEdit)
 	mux.HandleFunc("/quit", s.handleQuit)
 	s.server = &http.Server{Handler: mux}
 	go func() { _ = s.server.Serve(listener) }()
@@ -168,6 +188,152 @@ func (s *Server) openCommands() []*exec.Cmd {
 	return append(cmds, exec.Command("xdg-open", s.URL()))
 }
 
+// guiEditors son editores de ventana, del que viene con el escritorio al que
+// alguien instaló a propósito.
+var guiEditors = []string{
+	"gnome-text-editor", "gedit", "kate", "kwrite", "mousepad", "xed",
+	"pluma", "leafpad", "geany", "code", "subl",
+}
+
+// consoleOnly son editores que sólo existen adentro de una terminal: lanzarlos
+// sueltos desde acá los mata sin que nadie vea nada.
+var consoleOnly = []string{
+	"vi", "vim", "nvim", "nano", "emacs", "helix", "hx", "micro", "joe",
+	"mcedit", "ne", "kak", "pico",
+}
+
+// terminals son las terminales que aceptan -e para correr algo adentro. La
+// lista es corta a propósito: las que no lo aceptan —kitty, wezterm— piden cada
+// una su propia sintaxis, y este es el último recurso, no el camino principal.
+var terminals = []string{
+	"x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal",
+	"mate-terminal", "alacritty", "xterm",
+}
+
+// consoleEditors es lo que se abre en la terminal si nadie dijo cuál quiere.
+var consoleEditors = []string{"nano", "vim", "vi"}
+
+// editCommands son las maneras de abrir el config.toml, de la que el usuario
+// eligió a la que anda en cualquier lado.
+//
+// Primero va lo que haya en VISUAL o EDITOR, que es el usuario diciendo con qué
+// edita y no deja nada que adivinar. Después los editores de texto de ventana
+// que estén instalados. xdg-open, que parece el candidato natural, quedó
+// anteúltimo: abre con lo que el escritorio tenga asociado a la extensión, y en
+// una Ubuntu de todos los días un .toml lo abre LibreOffice Writer, que además
+// de tardar una eternidad ofrece guardarlo como .odt. De última, el editor de
+// consola adentro de una terminal, que es lo único que hay en una máquina sin
+// escritorio.
+func editCommands(path string) []*exec.Cmd {
+	var cmds []*exec.Cmd
+	if chosen := chosenEditor(); chosen != "" {
+		cmds = append(cmds, editorCommand(chosen, path))
+	}
+	for _, editor := range guiEditors {
+		if found, err := exec.LookPath(editor); err == nil {
+			cmds = append(cmds, exec.Command(found, path))
+		}
+	}
+	cmds = append(cmds, exec.Command("xdg-open", path))
+	if editor := consoleEditor(); editor != "" {
+		cmds = append(cmds, terminalCommand(editor, path))
+	}
+	return cmds
+}
+
+// chosenEditor es lo que el usuario puso en VISUAL o EDITOR.
+func chosenEditor() string {
+	for _, name := range []string{os.Getenv("VISUAL"), os.Getenv("EDITOR")} {
+		if strings.TrimSpace(name) != "" {
+			return strings.TrimSpace(name)
+		}
+	}
+	return ""
+}
+
+// consoleEditor es el editor de consola del usuario, o el primero que haya.
+func consoleEditor() string {
+	if chosen := chosenEditor(); chosen != "" {
+		return chosen
+	}
+	for _, name := range consoleEditors {
+		if _, err := exec.LookPath(name); err == nil {
+			return name
+		}
+	}
+	return ""
+}
+
+// editorCommand arma la corrida del editor elegido: si es de los que viven en
+// una terminal, adentro de una; si no, suelto.
+func editorCommand(editor, path string) *exec.Cmd {
+	fields := strings.Fields(editor)
+	if len(fields) == 0 {
+		return exec.Command("xdg-open", path)
+	}
+	if slices.Contains(consoleOnly, filepath.Base(fields[0])) {
+		return terminalCommand(editor, path)
+	}
+	return exec.Command(fields[0], append(fields[1:], path)...)
+}
+
+// terminalCommand abre el editor adentro de una terminal.
+func terminalCommand(editor, path string) *exec.Cmd {
+	args := append([]string{"-e"}, strings.Fields(editor)...)
+	return exec.Command(terminalBinary(), append(args, path)...)
+}
+
+// terminalBinary es la terminal donde meter al editor de consola. Si no hay
+// ninguna se devuelve igual la de Debian: el intento falla y no cambia nada,
+// pero la lista de intentos no se queda coja según en qué máquina corra.
+func terminalBinary() string {
+	for _, name := range terminals {
+		if found, err := exec.LookPath(name); err == nil {
+			return found
+		}
+	}
+	return "x-terminal-emulator"
+}
+
+// editorGrace es lo que se espera a ver si el editor se murió apenas arrancó.
+//
+// Sin esta espera, un editor que no está andando cuenta como éxito igual: el
+// que no encuentra display arranca bien y recién después se cae. Un editor que
+// abrió de verdad no termina en este rato, así que seguir vivo es la señal de
+// que anduvo. Segundo y pico porque los pesados —kate, code— tardan bastante
+// más que eso en darse cuenta de que no pueden abrir una ventana.
+var editorGrace = 1200 * time.Millisecond
+
+// openEditor abre el archivo con lo primero que funcione.
+func openEditor(path string) error {
+	var last error
+	for _, cmd := range editCommands(path) {
+		if err := startEditor(cmd); err != nil {
+			last = err
+			continue
+		}
+		return nil
+	}
+	if last == nil {
+		last = errors.New("no encontré con qué abrir el config.toml")
+	}
+	return last
+}
+
+func startEditor(cmd *exec.Cmd) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(editorGrace):
+		return nil
+	}
+}
+
 // option es una opción de un select: lo que se guarda y lo que se lee.
 type option struct {
 	Value    string
@@ -193,6 +359,7 @@ type view struct {
 	Monitors       []x11.Monitor
 	Commands       bool
 	CommandCount   int
+	TrailingSpace  bool
 }
 
 func (s *Server) snapshot() view {
@@ -217,8 +384,9 @@ func (s *Server) snapshot() view {
 		ConfigPath:  cfg.Path,
 		WhisperCommand: "whisper-server -m models/ggml-" + orElse(cfg.STT.Model, "small") +
 			".bin --host 127.0.0.1 --port 8080",
-		Commands:     cfg.Commands.Enabled,
-		CommandCount: len(commands.List(commands.OptionsFrom(cfg))),
+		Commands:      cfg.Commands.Enabled,
+		CommandCount:  len(commands.List(commands.OptionsFrom(cfg))),
+		TrailingSpace: cfg.Action.TrailingSpace,
 	}
 	if whisperOK {
 		v.WhisperDetail = "hay un whisper-server contestando en " + cfg.STT.WhisperServerURL
@@ -365,6 +533,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		{Section: "overlay", Key: "screen", Value: screen},
 		{Section: "overlay", Key: "position", Value: position},
 		{Section: "commands", Key: "enabled", Value: values.Commands},
+		{Section: "action", Key: "trailing_space", Value: values.TrailingSpace},
 	}
 	if !s.snapshot().KeyFromEnv {
 		settings = append(settings,
@@ -386,6 +555,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	cfg.Overlay.Screen = screen
 	cfg.Overlay.Position = position
 	cfg.Commands.Enabled = values.Commands
+	cfg.Action.TrailingSpace = values.TrailingSpace
 	if !s.snapshot().KeyFromEnv {
 		cfg.STT.GoogleAPIKey = strings.TrimSpace(values.GoogleAPIKey)
 	}
@@ -402,12 +572,171 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		Screen:         screen,
 		Position:       position,
 		Commands:       values.Commands,
+		TrailingSpace:  values.TrailingSpace,
+		Replacements:   cfg.Commands.Replacements,
 	}
+	s.notify(out)
+	replyJSON(w, http.StatusOK, map[string]any{"ok": true, "engine": stored, "path": path})
+}
+
+// commandsRequest es la tabla de comandos entera tal como quedó en la ventana.
+//
+// Viaja como lista y no como objeto para poder cazar la frase repetida: dos
+// claves iguales en un objeto JSON se pisan sin que nadie se entere, y quien
+// la escribió merece que se lo digan.
+type commandsRequest struct {
+	Replacements []commandEdit `json:"replacements"`
+}
+
+type commandEdit struct {
+	Say    string `json:"say"`
+	Writes string `json:"writes"`
+}
+
+// handleCommands lista los comandos y guarda los que cambiaste.
+//
+// Lo que se guarda es sólo lo que difiere de fábrica: un comando que no tocaste
+// no se escribe en el config, así que el día que cambie el catálogo tu archivo
+// no lo deja clavado en la versión vieja.
+func (s *Server) handleCommands(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.mu.Lock()
+		cfg := s.cfg
+		s.mu.Unlock()
+		replyJSON(w, http.StatusOK, map[string]any{
+			"entries": commands.Entries(commands.OptionsFrom(cfg)),
+			"enabled": cfg.Commands.Enabled,
+		})
+	case http.MethodPost:
+		s.saveCommands(w, r)
+	default:
+		http.Error(w, "sólo GET o POST", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) saveCommands(w http.ResponseWriter, r *http.Request) {
+	var req commandsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "no entendí el pedido", http.StatusBadRequest)
+		return
+	}
+	pairs, replacements, err := cleanCommands(req.Replacements)
+	if err != nil {
+		replyJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.mu.Lock()
+	cfg := s.cfg
+	s.mu.Unlock()
+	path := cfg.Path
+	if path == "" {
+		path = config.ConfigPath()
+	}
+	if _, err := config.SaveTable(path, "commands.replacements", pairs); err != nil {
+		replyJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	cfg.Commands.Replacements = replacements
+	cfg.Path = path
+	s.mu.Lock()
+	s.cfg = cfg
+	s.mu.Unlock()
+
+	s.notify(Values{
+		Engine:         cfg.STT.Engine,
+		GoogleAPIKey:   cfg.STT.GoogleAPIKey,
+		GoogleLanguage: cfg.STT.GoogleLanguage,
+		ChromeLanguage: cfg.STT.ChromeLanguage,
+		Screen:         cfg.Overlay.Screen,
+		Position:       cfg.Overlay.Position,
+		Commands:       cfg.Commands.Enabled,
+		TrailingSpace:  cfg.Action.TrailingSpace,
+		Replacements:   replacements,
+	})
+	replyJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"path":    path,
+		"entries": commands.Entries(commands.OptionsFrom(cfg)),
+	})
+}
+
+// cleanCommands revisa la tabla que llegó y la deja lista para el archivo.
+//
+// Las frases vacías se tiran sin decir nada: son la fila para agregar que
+// quedó sin llenar. La repetida sí se avisa, porque una de las dos se iba a
+// perder en silencio.
+func cleanCommands(edits []commandEdit) ([]config.Pair, map[string]string, error) {
+	pairs := make([]config.Pair, 0, len(edits))
+	replacements := make(map[string]string, len(edits))
+	seen := make(map[string]string, len(edits))
+	for _, e := range edits {
+		say := strings.TrimSpace(e.Say)
+		key := commands.NormalizePhrase(say)
+		if key == "" {
+			continue
+		}
+		if before, repeated := seen[key]; repeated {
+			return nil, nil, fmt.Errorf("%q y %q son el mismo comando: dejá uno solo", before, say)
+		}
+		seen[key] = say
+		pairs = append(pairs, config.Pair{Key: say, Value: e.Writes})
+		replacements[say] = e.Writes
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		return commands.NormalizePhrase(pairs[i].Key) < commands.NormalizePhrase(pairs[j].Key)
+	})
+	return pairs, replacements, nil
+}
+
+// notify le pasa al daemon los valores nuevos, si es que hay quien escuche.
+func (s *Server) notify(values Values) {
 	select {
-	case s.saved <- out:
+	case s.saved <- values:
 	default:
 	}
-	replyJSON(w, http.StatusOK, map[string]any{"ok": true, "engine": stored, "path": path})
+}
+
+// handleEdit abre el config.toml en un editor de la máquina.
+//
+// Lo que la página cambia es un puñado de valores; el resto vive en el archivo,
+// con los comentarios que explican cada uno. Mostrar la ruta obligaba a copiarla
+// y salir a buscar el archivo a mano, y este link se saltea ese paso.
+func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "sólo POST", http.StatusMethodNotAllowed)
+		return
+	}
+	s.mu.Lock()
+	path := s.cfg.Path
+	s.mu.Unlock()
+	if path == "" {
+		path = config.ConfigPath()
+	}
+	// Nadie tocó nunca el config y el archivo puede no existir todavía: abrirlo
+	// así sería una hoja en blanco, sin los comentarios que dicen qué se puede
+	// cambiar. Se escribe la plantilla y recién entonces se abre.
+	if err := ensureConfigFile(path); err != nil {
+		replyJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := s.edit(path); err != nil {
+		replyJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	replyJSON(w, http.StatusOK, map[string]any{"ok": true, "path": path})
+}
+
+func ensureConfigFile(path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(config.Template), 0o644)
 }
 
 // handleQuit contesta primero y avisa después: en cuanto el daemon se entere va
