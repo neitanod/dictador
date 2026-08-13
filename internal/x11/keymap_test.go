@@ -161,7 +161,13 @@ func TestIsTerminalReconoceLasQuePeganConCtrlShiftV(t *testing.T) {
 			t.Errorf("%q es una terminal", class)
 		}
 	}
-	for _, class := range []string{"firefox", "code", ""} {
+	// Las que se presentan con el app-id en reverse-DNS.
+	for _, class := range []string{"org.wezfurlong.wezterm", "com.mitchellh.ghostty", "org.gnome.Terminator"} {
+		if !IsTerminal(class) {
+			t.Errorf("%q es una terminal", class)
+		}
+	}
+	for _, class := range []string{"firefox", "code", "", "org.mozilla.firefox"} {
 		if IsTerminal(class) {
 			t.Errorf("%q no es una terminal", class)
 		}

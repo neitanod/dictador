@@ -20,7 +20,20 @@ var TerminalClasses = map[string]bool{
 }
 
 // IsTerminal dice si en esa clase de ventana hay que pegar con Ctrl+Shift+V.
-func IsTerminal(class string) bool { return TerminalClasses[strings.ToLower(class)] }
+//
+// Las terminales nuevas se presentan con el app-id en reverse-DNS
+// ("org.wezfurlong.wezterm", "com.mitchellh.ghostty"), así que además de la
+// clase entera se prueba el último segmento, que es donde está el nombre.
+func IsTerminal(class string) bool {
+	class = strings.ToLower(strings.TrimSpace(class))
+	if TerminalClasses[class] {
+		return true
+	}
+	if dot := strings.LastIndex(class, "."); dot >= 0 {
+		return TerminalClasses[class[dot+1:]]
+	}
+	return false
+}
 
 // Target es la ventana a la que le estamos dictando.
 type Target struct {
