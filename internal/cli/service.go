@@ -3,30 +3,17 @@ package cli
 import (
 	"fmt"
 	"os"
-	"path/filepath"
+
+	"github.com/neitanod/dictador/internal/desktop"
 )
 
 // El autostart va por el .desktop de XDG, que es lo que KDE, GNOME y Xfce leen
 // igual. Una unit de systemd --user también andaría, y traería una dependencia
 // del orden de arranque de la sesión gráfica que este .desktop no tiene.
-const desktopEntry = `[Desktop Entry]
-Type=Application
-Name=Dictador
-Comment=Dictado por voz global (push-to-talk)
-Exec=%s run
-Icon=audio-input-microphone
-Terminal=false
-X-GNOME-Autostart-enabled=true
-`
-
-func autostartPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
-	}
-	return filepath.Join(home, ".config", "autostart", "dictador.desktop")
-}
-
+//
+// Es el mismo archivo que el ícono del escritorio, con una línea de más: los
+// dos los arma internal/desktop, así que arreglar algo del lanzador lo arregla
+// en los dos lugares.
 func cmdService(opts *options, args []string) int {
 	fs := subflags("service", opts, opts.out.stderr)
 	if err := fs.Parse(args); err != nil {
@@ -34,20 +21,11 @@ func cmdService(opts *options, args []string) int {
 	}
 	opts.refresh()
 	action := firstArg(fs.Args(), "status")
-	path := autostartPath()
+	path := desktop.AutostartPath()
 
 	switch action {
 	case "install":
-		binary, err := os.Executable()
-		if err != nil {
-			opts.out.fail(err, "SERVICE")
-			return 1
-		}
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			opts.out.fail(err, "SERVICE")
-			return 1
-		}
-		if err := os.WriteFile(path, []byte(fmt.Sprintf(desktopEntry, binary)), 0o644); err != nil {
+		if _, err := desktop.InstallAutostart(desktop.Binary()); err != nil {
 			opts.out.fail(err, "SERVICE")
 			return 1
 		}
@@ -58,11 +36,11 @@ func cmdService(opts *options, args []string) int {
 		return 0
 
 	case "uninstall":
-		if err := os.Remove(path); err != nil {
-			if os.IsNotExist(err) {
-				_ = opts.out.print(map[string]any{"installed": false}, []string{"no estaba instalado"})
-				return 0
-			}
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			_ = opts.out.print(map[string]any{"installed": false}, []string{"no estaba instalado"})
+			return 0
+		}
+		if err := desktop.RemoveAutostart(); err != nil {
 			opts.out.fail(err, "SERVICE")
 			return 1
 		}
@@ -71,8 +49,7 @@ func cmdService(opts *options, args []string) int {
 		return 0
 
 	case "status":
-		_, err := os.Stat(path)
-		installed := err == nil
+		installed := desktop.AutostartInstalled()
 		_ = opts.out.print(map[string]any{"installed": installed, "path": path},
 			[]string{ifElse(installed, "instalado", "no instalado")})
 		return 0

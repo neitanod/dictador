@@ -11,10 +11,30 @@ import (
 
 func cmdRun(opts *options, args []string) int {
 	fs := subflags("run", opts, opts.out.stderr)
+	// --notify lo pone el .desktop del ícono, y no está pensado para escribirlo
+	// a mano: cuando el que arranca el dictado es un doble click, la única
+	// manera de saber que arrancó es que el escritorio lo diga.
+	announce := fs.Bool("notify", false, "avisar por notificación del escritorio")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	opts.refresh()
+
+	// El candado va antes que todo: si ya hay uno andando, este proceso no tiene
+	// nada que hacer más que decirlo.
+	held, other, err := takeLock()
+	if err == errBusy {
+		message := "Ya estaba andando"
+		if other > 0 {
+			message = fmt.Sprintf("Ya estaba andando (proceso %d)", other)
+		}
+		fmt.Fprintf(opts.out.stderr, "%s. Mantené la tecla y hablá.\n", message)
+		if *announce {
+			notify("Dictador", message+". Mantené la tecla y hablá.")
+		}
+		return 0
+	}
+	defer held.release()
 
 	cfg, err := opts.load()
 	if err != nil {
@@ -35,6 +55,15 @@ func cmdRun(opts *options, args []string) int {
 		fmt.Fprintf(opts.out.stdout, "motor de voz: %s\n", d.EngineLine())
 		if url := d.ConfigURL(); url != "" {
 			fmt.Fprintf(opts.out.stdout, "configuración: %s (o hacé click en la ventanita)\n", url)
+		}
+	}
+	if *announce {
+		if d.EngineFailed() {
+			notify("Dictador sin motor de voz",
+				"Arrancó, pero el motor no contesta: abrí la configuración y elegí otro.")
+		} else {
+			notify("Dictador andando",
+				"Mantené "+d.Combo().Describe()+" y hablá. El texto entra donde estés escribiendo.")
 		}
 	}
 	if d.EngineFailed() {

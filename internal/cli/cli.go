@@ -28,6 +28,7 @@ comandos:
   commands   lista los comandos hablados (--try "hola coma qué tal" los prueba)
   config     ver o editar la configuración (show | init | edit | path | set | web [--no-open])
   history    últimos dictados
+  desktop    ícono en el escritorio y entrada en el menú (install | uninstall | status)
   service    autostart en el login
   version    qué versión es esta
 
@@ -100,6 +101,8 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return cmdConfig(&opts, rest)
 	case "history":
 		return cmdHistory(&opts, rest)
+	case "desktop":
+		return cmdDesktop(&opts, rest)
 	case "service":
 		return cmdService(&opts, rest)
 	case "version":

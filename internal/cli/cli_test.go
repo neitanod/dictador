@@ -22,7 +22,7 @@ func TestSinComandoLaAyudaExplicaLosComandos(t *testing.T) {
 	if code != 0 {
 		t.Errorf("exit = %d", code)
 	}
-	for _, command := range []string{"run", "once", "bench", "doctor", "keys", "config", "history", "service"} {
+	for _, command := range []string{"run", "once", "bench", "doctor", "keys", "config", "history", "desktop", "service"} {
 		if !strings.Contains(stdout, command) {
 			t.Errorf("la ayuda no menciona %q", command)
 		}
@@ -154,6 +154,8 @@ func TestConfigShowSaleEnJSON(t *testing.T) {
 func TestServiceInstalaYDesinstalaElAutostart(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
 	path := filepath.Join(home, ".config", "autostart", "dictador.desktop")
 
 	if code, stdout, _ := run(t, "service", "status"); code != 0 ||
@@ -187,7 +189,9 @@ func TestServiceInstalaYDesinstalaElAutostart(t *testing.T) {
 }
 
 func TestServiceJSONEsConsumiblePorUnScript(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	code, stdout, _ := run(t, "--json", "service", "status")
 	if code != 0 {
 		t.Fatalf("exit = %d", code)
@@ -254,7 +258,7 @@ func TestParseValueDistingueTipos(t *testing.T) {
 // ese comando — que fue exactamente lo que pasó con `once -q`.
 func TestTodosLosSubcomandosRegistranSusFlags(t *testing.T) {
 	for _, command := range []string{
-		"run", "once", "bench", "doctor", "keys", "window", "config", "history", "service",
+		"run", "once", "bench", "doctor", "keys", "window", "config", "history", "desktop", "service",
 	} {
 		func() {
 			defer func() {
