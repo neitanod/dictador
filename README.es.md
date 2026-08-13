@@ -199,6 +199,7 @@ También desde la terminal:
 
 ```bash
 dictador config web                      # la misma página, sin el daemon detrás
+dictador config web --no-open            # servila y decime la URL, sin abrir ventana
 dictador config set stt.engine chrome
 ```
 
@@ -327,7 +328,7 @@ initial_prompt = ""        # jerga o nombres propios que quieras que acierte
 [action]
 on_release = "paste"       # paste | type | clipboard | keep_open
 restore_focus = true
-trailing_space = false
+trailing_space = false     # también se tilda en la configuración
 strip_final_period = false
 
 [overlay]

@@ -135,6 +135,24 @@ func (s *Server) Open() error {
 	return last
 }
 
+// chromeQuiet son los flags que hacen que Chrome abra la página y nada más.
+//
+// Sin ellos, un Chrome que arranca con un perfil recién nacido muestra primero
+// el diálogo de bienvenida —"Make Google Chrome the default browser" y las
+// estadísticas de uso— y la ventana que le pedimos ni aparece hasta que alguien
+// le da OK. Con el perfil de todos los días eso ya está contestado y no se ve,
+// así que el diálogo salta justo cuando molesta más: probando con un HOME o un
+// XDG_CONFIG_HOME temporal, donde el perfil siempre es virgen y el que se come
+// la ventana en la cara es el que está usando la máquina.
+// El otro que se cuela es el globito de Google Translate, y ese no se apaga
+// desde acá: lo apaga el notranslate de page.html. Probé con
+// --disable-features=Translate y la burbuja aparecía igual.
+var chromeQuiet = []string{
+	"--no-first-run",
+	"--no-default-browser-check",
+	"--disable-extensions",
+}
+
 // openCommands son las maneras de abrir la página, de la que mejor queda a la
 // que anda en cualquier lado.
 func (s *Server) openCommands() []*exec.Cmd {
@@ -144,7 +162,8 @@ func (s *Server) openCommands() []*exec.Cmd {
 
 	var cmds []*exec.Cmd
 	if chrome := stt.ChromeBinary(preferred); chrome != "" {
-		cmds = append(cmds, exec.Command(chrome, "--app="+s.URL()))
+		args := append(append([]string{}, chromeQuiet...), "--app="+s.URL())
+		cmds = append(cmds, exec.Command(chrome, args...))
 	}
 	return append(cmds, exec.Command("xdg-open", s.URL()))
 }

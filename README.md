@@ -205,6 +205,7 @@ From the terminal too:
 
 ```bash
 dictador config web                      # the same page, without the daemon
+dictador config web --no-open            # serve it and print the URL, no window
 dictador config set stt.engine chrome
 ```
 
@@ -333,7 +334,7 @@ initial_prompt = ""        # jargon or proper nouns you want it to get right
 [action]
 on_release = "paste"       # paste | type | clipboard | keep_open
 restore_focus = true
-trailing_space = false
+trailing_space = false     # also a checkbox in the settings page
 strip_final_period = false
 
 [overlay]

@@ -46,6 +46,9 @@ const chromePage = `<!doctype html>
 <body>
 <script>
 const LANG = %s;
+// Cuántos reintentos seguidos contra un server que no contesta antes de dar por
+// muerto al dictador y cerrar este Chrome.
+const HUERFANO_TRAS = %d;
 const post = (kind, text) =>
   fetch('/event', {method: 'POST', body: JSON.stringify({kind, text: text || ''})})
     .catch(() => {});
@@ -78,14 +81,23 @@ function stop() {
   else post('final', '');
 }
 
+// El long polling es también el pulso del dictador: mientras contesta —aunque
+// sea un noop— está vivo. Si se murió de mala manera (un kill -9, un cuelgue,
+// una sesión que se cierra) este Chrome se quedaba dando vueltas para siempre,
+// reintentando contra un puerto que ya no existe: invisible, porque es headless,
+// pero gastando CPU y un perfil en /tmp. Después de un rato sin nadie del otro
+// lado se cierra solo.
 async function loop() {
+  let fallos = 0;
   for (;;) {
     try {
       const answer = await fetch('/command');
       const command = (await answer.text()).trim();
+      fallos = 0;
       if (command === 'start') start();
       else if (command === 'stop') stop();
     } catch (e) {
+      if (++fallos >= HUERFANO_TRAS) { window.close(); return; }
       await new Promise(r => setTimeout(r, 500));
     }
   }
@@ -128,6 +140,8 @@ type Chrome struct {
 	readyTimeout time.Duration
 	finalTimeout time.Duration
 	headless     bool
+	// orphanRetries lo baja el test para no esperar los 20s de la vida real.
+	orphanRetries int
 
 	commands chan string
 
@@ -179,10 +193,18 @@ func (c *Chrome) Name() string          { return "chrome" }
 func (c *Chrome) SupportsPartial() bool { return true }
 func (c *Chrome) Describe() string      { return fmt.Sprintf("Chrome / Web Speech (%s)", c.language) }
 
+// orphanRetries es la paciencia por default: 40 reintentos de 500ms son 20
+// segundos sin nadie contestando, bastante más que cualquier hipo del server.
+const orphanRetries = 40
+
 // page es el HTML que Chrome va a correr, con el idioma ya adentro.
 func (c *Chrome) page() string {
 	lang, _ := json.Marshal(c.language)
-	return fmt.Sprintf(chromePage, lang)
+	retries := c.orphanRetries
+	if retries <= 0 {
+		retries = orphanRetries
+	}
+	return fmt.Sprintf(chromePage, lang, retries)
 }
 
 func closed(ch chan struct{}) bool {

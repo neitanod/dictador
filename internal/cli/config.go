@@ -18,16 +18,23 @@ func cmdConfig(opts *options, args []string) int {
 	fs := subflags("config", opts, opts.out.stderr)
 	force := fs.Bool("force", false, "sobrescribir el config existente")
 	fs.BoolVar(force, "f", false, "sobrescribir el config existente")
+	noOpen := fs.Bool("no-open", false, "config web: servir la página sin abrir el browser")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	opts.refresh()
 	rest := fs.Args()
 	action := "show"
 	if len(rest) > 0 {
 		action = rest[0]
-		rest = rest[1:]
+		// Segunda vuelta: el paquete flag corta en el primer argumento suelto,
+		// así que los flags escritos después de la acción —`config web
+		// --no-open`, `config init --force`— quedaban sin leer.
+		if err := fs.Parse(rest[1:]); err != nil {
+			return 2
+		}
+		rest = fs.Args()
 	}
+	opts.refresh()
 
 	switch action {
 	case "path":
@@ -64,7 +71,7 @@ func cmdConfig(opts *options, args []string) int {
 		return configSet(opts, rest)
 
 	case "web", "gui":
-		return configWeb(opts)
+		return configWeb(opts, *noOpen)
 
 	case "show":
 		cfg, err := opts.load()
@@ -88,7 +95,11 @@ func cmdConfig(opts *options, args []string) int {
 //
 // Es la misma página que sirve el daemon cuando le hacés click al overlay; acá
 // vive lo que dure el comando, y se cierra sola cuando guardás.
-func configWeb(opts *options) int {
+//
+// Con noOpen sirve la página y se queda esperando sin abrir nada. Es para
+// probarla —con curl, o con un browser en un display virtual— sin plantarle una
+// ventana en la pantalla al que está usando la máquina.
+func configWeb(opts *options, noOpen bool) int {
 	cfg, err := opts.load()
 	if err != nil {
 		opts.out.fail(err, "CONFIG")
@@ -102,8 +113,13 @@ func configWeb(opts *options) int {
 	defer server.Close()
 
 	opts.out.info("configuración en %s", server.URL())
-	if err := server.Open(); err != nil {
-		opts.out.info("no pude abrir el browser (%v): entrá vos a %s", err, server.URL())
+	switch {
+	case noOpen:
+		opts.out.info("no abro el browser: entrá vos a %s", server.URL())
+	default:
+		if err := server.Open(); err != nil {
+			opts.out.info("no pude abrir el browser (%v): entrá vos a %s", err, server.URL())
+		}
 	}
 
 	// Se queda hasta que guardes o hasta que te aburras: sin esto el comando

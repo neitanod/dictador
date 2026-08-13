@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -65,6 +66,15 @@ func TestAbreConChromeCuandoHay(t *testing.T) {
 	// cerrar: si dejara de pedirse, la página quedaría abierta para siempre.
 	if !strings.Contains(strings.Join(cmds[0].Args, " "), "--app="+s.URL()) {
 		t.Fatalf("esperaba una ventana de app de Chrome, vino %v", cmds[0].Args)
+	}
+	// Con un perfil virgen —cualquier prueba que corra con HOME temporal— un
+	// Chrome sin estos flags abre el diálogo de bienvenida en vez de la página.
+	// Van escritos a mano y no leídos de chromeQuiet: la lista es justo lo que
+	// esto tiene que custodiar.
+	for _, flag := range []string{"--no-first-run", "--no-default-browser-check"} {
+		if !slices.Contains(cmds[0].Args, flag) {
+			t.Errorf("falta %s: Chrome va a abrir el diálogo de bienvenida, vino %v", flag, cmds[0].Args)
+		}
 	}
 }
 

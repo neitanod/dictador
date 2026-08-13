@@ -25,7 +25,7 @@ comandos:
   doctor     chequea que todo lo necesario esté en su lugar
   keys       lista las teclas del mapa actual, para elegir el hotkey
   commands   lista los comandos hablados (--try "hola coma qué tal" los prueba)
-  config     ver o editar la configuración (show | init | edit | path | set | web)
+  config     ver o editar la configuración (show | init | edit | path | set | web [--no-open])
   history    últimos dictados
   service    autostart en el login
   version    qué versión es esta
