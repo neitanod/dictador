@@ -25,6 +25,11 @@ make install          # compila y deja el binario en ~/.local/bin
 dictador doctor       # chequea que todo esté en su lugar
 ```
 
+Si además vas a tocar el código, `make link` deja en `~/.local/bin` un enlace a
+`bin/dictador` en vez de una copia: desde ahí cada `make build` es lo que corre
+la terminal, sin acordarse de reinstalar. `make install` avisa si estás pisando
+un enlace con una copia, y `make link` avisa al revés.
+
 `make install` no toca nada del sistema: compila y copia. Para tenerlo a un doble
 click, `dictador desktop install` deja el ícono en el escritorio y la entrada en
 el menú; para que arranque solo en cada login, `dictador service install`. Las

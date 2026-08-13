@@ -25,6 +25,12 @@ make install          # builds and drops the binary in ~/.local/bin
 dictador doctor       # checks everything is where it should be
 ```
 
+If you are also going to work on the code, `make link` drops a symlink to
+`bin/dictador` in `~/.local/bin` instead of a copy: from then on every `make
+build` is what your terminal runs, with nothing to reinstall. `make install`
+warns you when it replaces a link with a copy, and `make link` warns the other
+way around.
+
 `make install` touches nothing system-wide: it builds and copies. To get it one
 double click away, `dictador desktop install` drops the icon on your desktop and
 the entry in your menu; to have it start on every login, `dictador service
