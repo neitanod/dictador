@@ -76,6 +76,27 @@ func takeLock() (*lock, int, error) {
 // errBusy es "ya hay uno corriendo", que no es un error de nada: es la respuesta.
 var errBusy = fmt.Errorf("ya hay un dictador andando")
 
+// lockOwner pregunta por el candado sin quedárselo: devuelve el PID del que lo
+// tiene y si está tomado.
+//
+// Es takeLock para el que viene a mirar y no a dictar. La diferencia que importa
+// es que acá el archivo no se escribe: dejarle adentro el PID del que preguntó
+// haría que el próximo `run` que se choque con un dictador nombre a un proceso
+// que nunca escuchó una tecla.
+func lockOwner() (pid int, busy bool, err error) {
+	file, err := os.OpenFile(lockPath(), os.O_RDWR|os.O_CREATE, 0o644)
+	if err != nil {
+		return 0, false, err
+	}
+	defer file.Close()
+
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		return readPID(file), true, nil
+	}
+	_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+	return 0, false, nil
+}
+
 func readPID(file *os.File) int {
 	buf := make([]byte, 32)
 	n, _ := file.ReadAt(buf, 0)

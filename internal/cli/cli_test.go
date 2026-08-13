@@ -22,7 +22,7 @@ func TestSinComandoLaAyudaExplicaLosComandos(t *testing.T) {
 	if code != 0 {
 		t.Errorf("exit = %d", code)
 	}
-	for _, command := range []string{"run", "once", "bench", "doctor", "keys", "config", "history", "desktop", "service"} {
+	for _, command := range []string{"run", "shutdown", "once", "bench", "doctor", "keys", "config", "history", "desktop", "service"} {
 		if !strings.Contains(stdout, command) {
 			t.Errorf("la ayuda no menciona %q", command)
 		}
@@ -258,7 +258,7 @@ func TestParseValueDistingueTipos(t *testing.T) {
 // ese comando — que fue exactamente lo que pasó con `once -q`.
 func TestTodosLosSubcomandosRegistranSusFlags(t *testing.T) {
 	for _, command := range []string{
-		"run", "once", "bench", "doctor", "keys", "window", "config", "history", "desktop", "service",
+		"run", "shutdown", "once", "bench", "doctor", "keys", "window", "config", "history", "desktop", "service",
 	} {
 		func() {
 			defer func() {

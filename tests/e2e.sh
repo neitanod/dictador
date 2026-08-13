@@ -64,6 +64,10 @@ sleep 0.5
 # portapapeles, que es lo que el test puede leer sin una ventana que reciba.
 export XDG_CONFIG_HOME="$WORK/config"
 export XDG_STATE_HOME="$WORK/state"
+# El candado también va adentro del temporal: si no, el e2e comparte el de la
+# sesión y se choca con el dictador que el que corre el test tiene andando.
+export XDG_RUNTIME_DIR="$WORK/run"
+mkdir -p "$XDG_RUNTIME_DIR"
 mkdir -p "$XDG_CONFIG_HOME/dictador"
 cat > "$XDG_CONFIG_HOME/dictador/config.toml" <<EOF
 [hotkey]
@@ -247,6 +251,31 @@ else
 	sed 's/^/    daemon: /' "$WORK/daemon4.log"
 fi
 kill "$RECEIVER_PID" 2>/dev/null
+
+# ---- pararlo desde afuera -------------------------------------------------
+#
+# El daemon que quedó andando es el conejillo: sin ventana propia y sin la
+# terminal que lo arrancó, `shutdown` es lo único que lo baja.
+say ""
+say "y pararlo desde afuera"
+
+SHUT="$("$WORK/dictador" shutdown 2>&1)"
+[[ "$SHUT" == *"paré el dictador"* ]] && ok "shutdown avisó: $SHUT" ||
+	bad "shutdown dijo «$SHUT»"
+
+# Con un guardián atrás, para que un daemon que no se muera cuelgue el test.
+( sleep 5; kill -9 "$DAEMON_PID" 2>/dev/null ) &
+GUARD=$!
+wait "$DAEMON_PID" 2>/dev/null
+DAEMON_EXIT=$?
+kill "$GUARD" 2>/dev/null
+DAEMON_PID=""
+[[ "$DAEMON_EXIT" == "143" ]] && ok "el daemon se fue por SIGTERM, ordenado" ||
+	bad "el daemon terminó con $DAEMON_EXIT (143 sería el SIGTERM atendido)"
+
+SHUT="$("$WORK/dictador" shutdown 2>&1)"
+[[ "$SHUT" == *"no había ninguno andando"* ]] && ok "y pararlo de nuevo no es un error" ||
+	bad "el segundo shutdown dijo «$SHUT»"
 
 if [[ "$FAILED" != "0" ]]; then
 	say ""

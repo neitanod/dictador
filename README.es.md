@@ -55,10 +55,18 @@ no se ve por ningún lado.
 
 ```bash
 dictador run          # arranca el daemon y se queda escuchando la tecla
+dictador shutdown     # y lo para
 ```
 
 Con el daemon corriendo, mantené **AltGr + Control derecho**, hablá, y soltá. El
 texto se pega donde estaba el cursor.
+
+Pararlo desde la terminal que lo arrancó es un Ctrl+C, y esa terminal es
+justamente la que no existe cuando lo prendiste con el ícono: para eso está
+`dictador shutdown`, que busca al que tiene el candado, le pide que se vaya y
+espera a que se haya ido de verdad. Si no había ninguno andando lo dice y sale
+bien, así que un script puede llamarlo antes de arrancar el suyo sin averiguar
+nada primero.
 
 ### Elegir otra combinación
 
@@ -321,6 +329,7 @@ red y una llamada facturada.
 | comando | qué hace |
 |---|---|
 | `dictador run` | el daemon con la tecla global |
+| `dictador shutdown` | para el que está andando |
 | `dictador once` | graba una vez y escribe el texto en stdout |
 | `dictador bench` | compara los motores con tu voz |
 | `dictador doctor` | chequea que todo esté en su lugar |

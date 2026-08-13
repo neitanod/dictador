@@ -20,6 +20,7 @@ uso: dictador [flags globales] <comando> [flags del comando]
 
 comandos:
   run        arranca el daemon con la tecla global (es lo que hace sin comando)
+  shutdown   para el dictador que está andando
   once       graba una vez y escribe el texto en stdout
   bench      compara los motores con tu voz para elegir el tuyo
   doctor     chequea que todo lo necesario esté en su lugar
@@ -85,6 +86,8 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	switch command {
 	case "run":
 		return cmdRun(&opts, rest)
+	case "shutdown":
+		return cmdShutdown(&opts, rest)
 	case "once":
 		return cmdOnce(&opts, rest)
 	case "bench":

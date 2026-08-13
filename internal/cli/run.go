@@ -38,7 +38,11 @@ func cmdRun(opts *options, args []string) int {
 		if other > 0 {
 			message = fmt.Sprintf("Ya estaba andando (proceso %d)", other)
 		}
+		// La terminal se lleva además cómo pararlo: el que se choca con este
+		// mensaje es casi siempre el que quería reiniciarlo. En la notificación
+		// no va, que ahí no hay dónde escribir el comando.
 		fmt.Fprintf(opts.out.stderr, "%s. %s\n", message, hold)
+		fmt.Fprintf(opts.out.stderr, "Para pararlo: dictador shutdown\n")
 		if *announce {
 			notify("Dictador", message+". "+hold)
 		}

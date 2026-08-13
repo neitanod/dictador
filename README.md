@@ -56,10 +56,18 @@ deliberately stays invisible can give.
 
 ```bash
 dictador run          # starts the daemon and waits for the key
+dictador shutdown     # and stops it
 ```
 
 With the daemon running, hold **AltGr + Right Control**, talk, and let go. The
 text is pasted where the cursor was.
+
+Stopping it from the terminal that started it is a Ctrl+C, and that terminal is
+exactly the one that does not exist when you started it from the icon. That is
+what `dictador shutdown` is for: it finds whoever holds the lock, asks it to
+leave, and waits until it is really gone. With nobody running it says so and
+exits fine, so a script can call it before starting its own without checking
+anything first.
 
 ### Picking another key
 
@@ -330,6 +338,7 @@ and a billed call.
 | command | what it does |
 |---|---|
 | `dictador run` | the daemon with the global key |
+| `dictador shutdown` | stops the one that is running |
 | `dictador once` | records once and writes the text to stdout |
 | `dictador bench` | compares the engines using your voice |
 | `dictador doctor` | checks everything is where it should be |
