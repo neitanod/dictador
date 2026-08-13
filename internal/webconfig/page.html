@@ -69,6 +69,12 @@
     padding: 9px 20px; color: var(--text); font-size: 14px; cursor: pointer;
   }
   button:hover { background: var(--go-hover); }
+  button.kill { background: transparent; border-color: #6b3030; color: #e08b8b; }
+  button.kill:hover { background: #3a1d1d; border-color: var(--warn); color: #f4b0b0; }
+  button:disabled { opacity: .5; cursor: default; }
+  .danger { align-items: center; gap: 14px; }
+  .danger button { flex: none; white-space: nowrap; }
+  .danger .hint { margin: 0; }
   #message { font-size: 13px; }
   #message.error { color: var(--warn); }
   #message.ok { color: #78c88c; }
@@ -177,6 +183,14 @@
   </form>
 
   <p class="foot">El motor cambia en caliente: no hace falta reiniciar el dictado.</p>
+
+  <hr>
+
+  <footer class="danger">
+    <button type="button" class="kill" id="kill">Matar al dictador</button>
+    <span class="hint">Cierra el programa y esta página. La tecla deja de dictar
+      hasta que lo arranques de nuevo con <code>dictador run</code>.</span>
+  </footer>
 </main>
 
 <script>
@@ -184,11 +198,36 @@
   const message = document.getElementById('message');
   const key = document.getElementById('key');
   const show = document.getElementById('show');
+  const kill = document.getElementById('kill');
 
   if (show) {
     show.addEventListener('change', () => {
       key.type = show.checked ? 'text' : 'password';
     });
+  }
+
+  kill.addEventListener('click', async () => {
+    kill.disabled = true;
+    message.className = '';
+    message.textContent = '';
+    // Si el proceso muere antes de terminar de contestar, el fetch falla y da
+    // igual: la muerte es exactamente el resultado que pedimos.
+    await fetch('/quit', {method: 'POST'}).catch(() => {});
+    farewell();
+  });
+
+  // El browser sólo deja cerrar por script las ventanas que abrió por script, y
+  // ésta la abrió xdg-open. Se intenta igual, porque a veces se puede; si la
+  // pestaña sigue ahí, que al menos diga qué pasó en vez de mostrar una
+  // configuración que ya no configura nada.
+  function farewell() {
+    window.close();
+    setTimeout(() => {
+      document.body.innerHTML =
+        '<main><h1>Listo, el dictador ya no está.</h1>' +
+        '<p class="sub">Podés cerrar esta pestaña. Para volver a levantarlo, ' +
+        '<code>dictador run</code>.</p></main>';
+    }, 250);
   }
 
   form.addEventListener('submit', async event => {

@@ -231,8 +231,10 @@ func (d *Daemon) Run() error {
 		clicks = clickable.Clicked()
 	}
 	var saved <-chan webconfig.Values
+	var killed <-chan struct{}
 	if d.web != nil {
 		saved = d.web.Saved()
+		killed = d.web.Quit()
 	}
 
 	for {
@@ -274,6 +276,12 @@ func (d *Daemon) Run() error {
 
 		case values := <-saved:
 			d.applySettings(values)
+
+		case <-killed:
+			// El botón "Matar al dictador" de la configuración. Salir del bucle
+			// alcanza: quien llamó a Run cierra todo y el proceso termina.
+			d.log("me mataron desde la configuración")
+			return nil
 
 		case res := <-d.results:
 			d.onResult(res)

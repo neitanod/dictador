@@ -11,6 +11,7 @@ package webconfig
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"net"
@@ -45,6 +46,8 @@ type Server struct {
 	listener net.Listener
 	server   *http.Server
 	saved    chan Values
+	quit     chan struct{}
+	quitOnce sync.Once
 	tmpl     *template.Template
 }
 
@@ -65,11 +68,13 @@ func New(cfg config.Config) (*Server, error) {
 		cfg:      cfg,
 		listener: listener,
 		saved:    make(chan Values, 4),
+		quit:     make(chan struct{}),
 		tmpl:     tmpl,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handlePage)
 	mux.HandleFunc("/save", s.handleSave)
+	mux.HandleFunc("/quit", s.handleQuit)
 	s.server = &http.Server{Handler: mux}
 	go func() { _ = s.server.Serve(listener) }()
 	return s, nil
@@ -82,6 +87,12 @@ func (s *Server) URL() string {
 
 // Saved trae los valores cada vez que alguien guarda.
 func (s *Server) Saved() <-chan Values { return s.saved }
+
+// Quit se cierra cuando alguien apretó "Matar al dictador" en la página.
+//
+// Es un canal cerrado y no un valor porque la muerte pasa una sola vez y la
+// tienen que ver todos los que estén mirando.
+func (s *Server) Quit() <-chan struct{} { return s.quit }
 
 // Update le cuenta al server que la configuración cambió por otro lado.
 func (s *Server) Update(cfg config.Config) {
@@ -98,9 +109,42 @@ func (s *Server) Close() {
 }
 
 // Open abre la configuración en el browser del sistema.
+//
+// Si hay Chrome va como ventana de app —sin barra de direcciones ni pestañas—,
+// que se parece bastante al diálogo que esto era en la versión Python. Lo que
+// decide es el botón que mata al dictador: una ventana de app se puede cerrar
+// por script y una pestaña común no, así que el "también la página" sólo se
+// cumple de verdad acá.
 func (s *Server) Open() error {
-	cmd := exec.Command("xdg-open", s.URL())
-	return cmd.Start()
+	var last error
+	for _, cmd := range s.openCommands() {
+		if err := cmd.Start(); err != nil {
+			last = err
+			continue
+		}
+		// El Chrome que ya estaba corriendo se queda con la ventana y este
+		// proceso termina enseguida: hay que juntarlo o queda de zombi.
+		go func() { _ = cmd.Wait() }()
+		return nil
+	}
+	if last == nil {
+		last = errors.New("no encontré con qué abrir el browser")
+	}
+	return last
+}
+
+// openCommands son las maneras de abrir la página, de la que mejor queda a la
+// que anda en cualquier lado.
+func (s *Server) openCommands() []*exec.Cmd {
+	s.mu.Lock()
+	preferred := s.cfg.STT.ChromeBinary
+	s.mu.Unlock()
+
+	var cmds []*exec.Cmd
+	if chrome := stt.ChromeBinary(preferred); chrome != "" {
+		cmds = append(cmds, exec.Command(chrome, "--app="+s.URL()))
+	}
+	return append(cmds, exec.Command("xdg-open", s.URL()))
 }
 
 // option es una opción de un select: lo que se guarda y lo que se lee.
@@ -336,6 +380,21 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	default:
 	}
 	replyJSON(w, http.StatusOK, map[string]any{"ok": true, "engine": stored, "path": path})
+}
+
+// handleQuit contesta primero y avisa después: en cuanto el daemon se entere va
+// a cerrar este mismo server, y una respuesta a medio salir dejaría a la página
+// esperando a un programa que ya no está.
+func (s *Server) handleQuit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "sólo POST", http.StatusMethodNotAllowed)
+		return
+	}
+	replyJSON(w, http.StatusOK, map[string]any{"ok": true})
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	s.quitOnce.Do(func() { close(s.quit) })
 }
 
 func replyJSON(w http.ResponseWriter, status int, body any) {
