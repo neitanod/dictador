@@ -95,6 +95,12 @@ type Daemon struct {
 	partialTicker *time.Ticker
 	partialEvery  time.Duration
 
+	// El config.toml se puede editar a mano mientras esto anda, así que se lo
+	// mira. reloadPending es un cambio visto en medio de un dictado, que espera
+	// a que termines para aplicarse.
+	watcher       *config.Watcher
+	reloadPending bool
+
 	results chan result
 	quit    chan struct{}
 }
@@ -150,6 +156,10 @@ func New(cfg config.Config, verbose bool) (*Daemon, error) {
 	} else {
 		d.web = web
 	}
+
+	// El archivo se mira aunque todavía no exista: que aparezca uno es otro de
+	// los cambios que hay que leer.
+	d.watcher = config.NewWatcher(configPath(cfg), time.Second)
 
 	// Antes de armar el motor: si el dictador anterior murió de mala manera, su
 	// Chrome puede seguir vivo gastando CPU contra un puerto que ya no existe.
@@ -221,7 +231,7 @@ func (d *Daemon) Run() error {
 	tick := time.NewTicker(80 * time.Millisecond)
 	defer tick.Stop()
 
-	d.partialEvery = time.Duration(d.cfg.STT.PartialIntervalMs) * time.Millisecond
+	d.partialEvery = partialEvery(d.cfg)
 	d.partialTicker = time.NewTicker(time.Hour) // se reprograma al empezar a grabar
 	d.partialTicker.Stop()
 	defer d.partialTicker.Stop()
@@ -239,6 +249,10 @@ func (d *Daemon) Run() error {
 	if d.web != nil {
 		saved = d.web.Saved()
 		killed = d.web.Quit()
+	}
+	var edited <-chan struct{}
+	if d.watcher != nil {
+		edited = d.watcher.Changed()
 	}
 
 	for {
@@ -280,6 +294,15 @@ func (d *Daemon) Run() error {
 
 		case values := <-saved:
 			d.applySettings(values)
+
+		case <-edited:
+			// Editaste el archivo a mano. Si estás dictando, el reload espera:
+			// rearmar el motor en medio de una toma la perdería.
+			if d.state == idle {
+				d.reloadConfig()
+			} else {
+				d.reloadPending = true
+			}
 
 		case <-killed:
 			// El botón "Matar al dictador" de la configuración. Salir del bucle
@@ -441,6 +464,12 @@ func orUnknown(class string) string {
 }
 
 func (d *Daemon) onTick() {
+	// El config que cambió mientras dictabas se aplica ahora, con el dictado ya
+	// entregado y la próxima toma todavía sin empezar.
+	if d.reloadPending && d.state == idle {
+		d.reloadPending = false
+		d.reloadConfig()
+	}
 	if d.state != recording {
 		return
 	}
@@ -736,6 +765,9 @@ func (d *Daemon) Stop() {
 		close(d.quit)
 	}
 	d.listener.Stop()
+	if d.watcher != nil {
+		d.watcher.Close()
+	}
 	if d.recorder.Running() {
 		d.recorder.Stop()
 	}
