@@ -151,6 +151,10 @@ func New(cfg config.Config, verbose bool) (*Daemon, error) {
 		d.web = web
 	}
 
+	// Antes de armar el motor: si el dictador anterior murió de mala manera, su
+	// Chrome puede seguir vivo gastando CPU contra un puerto que ya no existe.
+	stt.SweepOrphanChromes(d.log)
+
 	d.buildEngine()
 	return d, nil
 }

@@ -316,6 +316,12 @@ func (c *Chrome) launch() error {
 		return err
 	}
 	c.profile = profile
+	// El dueño se anota antes de arrancar Chrome, no después: entre el mkdir y
+	// el arranque puede pasar el barrido de otro dictador, y un perfil sin dueño
+	// escrito parece de una versión vieja. Si no se pudo escribir seguimos igual
+	// — el dictado importa más que la prolijidad del /tmp — y el barrido tiene
+	// con qué salvarlo: mientras este proceso viva, su Chrome cuelga de él.
+	_ = WriteOwner(profile)
 
 	args := []string{
 		"--disable-gpu",
