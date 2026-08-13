@@ -203,7 +203,22 @@ func neededHeight(lines []string, fc *faces, m metrics) int {
 }
 
 // wrap corta el texto en líneas que entren en el ancho dado.
+//
+// Los saltos que trae el texto se respetan: cuando el dictado dice "punto y
+// aparte", el párrafo nuevo tiene que verse en la ventanita igual que va a
+// quedar en la pantalla.
 func wrap(text string, face font.Face, width int) []string {
+	var lines []string
+	for _, paragraph := range strings.Split(text, "\n") {
+		lines = append(lines, wrapLine(paragraph, face, width)...)
+	}
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	return lines
+}
+
+func wrapLine(text string, face font.Face, width int) []string {
 	words := strings.Fields(text)
 	if len(words) == 0 {
 		return []string{""}

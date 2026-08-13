@@ -80,6 +80,13 @@ func TestWrapCortaPorPalabra(t *testing.T) {
 	if got := wrap("   ", fc.body, 200); len(got) != 1 || got[0] != "" {
 		t.Errorf("con texto vacío dio %q", got)
 	}
+
+	// El salto que dictaste con "punto y aparte" se ve en la ventanita igual
+	// que va a quedar escrito.
+	got := wrap("primero.\nsegundo", fc.body, 400)
+	if len(got) != 2 || got[0] != "primero." || got[1] != "segundo" {
+		t.Errorf("el párrafo nuevo se perdió: %q", got)
+	}
 }
 
 func TestFormatSecondsRedondea(t *testing.T) {

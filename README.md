@@ -134,6 +134,10 @@ el archivo está en config barra dictador barra config punto toml
    → el archivo está en config/dictador/config.toml
 ```
 
+**The little window shows them applied as you speak**: say "abre pregunta" and
+the `¿` shows up there, say "punto y aparte" and the text drops a line. What you
+read is what's going to be written.
+
 `dictador commands` lists them all, and `--try` runs a phrase through them
 without touching the microphone:
 

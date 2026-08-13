@@ -61,8 +61,11 @@ func main() {
 		window.SetMeter(0.55, 2.4)
 	})
 	shot("02-parcial", func() {
-		window.SetPartial("esto es lo que se va entendiendo mientras hablás, y sigue " +
-			"creciendo hasta que la ventanita necesita una segunda línea para mostrarlo entero")
+		// Con los comandos ya aplicados, que es como se ve mientras hablás: el
+		// "abre pregunta" que dijiste ya es un ¿, y el "punto y aparte" ya bajó
+		// de renglón.
+		window.SetPartial("¿cómo va lo del deploy?\nel archivo está en " +
+			"config/dictador/config.toml y lo miro cuando llegue")
 		window.SetMeter(0.8, 5.1)
 	})
 	shot("03-transcribiendo", func() {

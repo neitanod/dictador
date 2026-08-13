@@ -129,6 +129,10 @@ el archivo está en config barra dictador barra config punto toml
    → el archivo está en config/dictador/config.toml
 ```
 
+**La ventanita ya los muestra aplicados mientras hablás**: cuando decís "abre
+pregunta" ahí aparece el `¿`, y cuando decís "punto y aparte" el texto baja de
+renglón. Lo que leés es lo que se va a escribir.
+
 `dictador commands` los lista todos, y `--try` los prueba sin hablarle al
 micrófono:
 

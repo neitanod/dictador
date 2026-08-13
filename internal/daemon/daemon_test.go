@@ -62,3 +62,34 @@ func TestEstadosSeNombranParaElLog(t *testing.T) {
 		}
 	}
 }
+
+func TestElPreviewMuestraLosComandosYaAplicados(t *testing.T) {
+	cfg := config.Defaults()
+	got := Preview("abre pregunta cómo andás signo de pregunta", cfg)
+	if got != "¿cómo andás?" {
+		t.Errorf("quedó %q", got)
+	}
+	// Y lo que borra, borrado: si no, mientras hablás ves texto que ya no va.
+	if got := Preview("esto está mal borrá eso esto está bien", cfg); got != "esto está bien" {
+		t.Errorf("quedó %q", got)
+	}
+}
+
+func TestElPreviewDejaElPuntoFinalQueEstáPorCrecer(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Action.StripFinalPeriod = true
+	cfg.Action.TrailingSpace = true
+	// El parcial se está escribiendo: recortarle el punto de ahora sería
+	// recortar el medio de una oración.
+	if got := Preview("hola mundo.", cfg); got != "hola mundo." {
+		t.Errorf("quedó %q", got)
+	}
+}
+
+func TestConLosComandosApagadosElPreviewEsElTextoCrudo(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Commands.Enabled = false
+	if got := Preview("hola coma qué tal", cfg); got != "hola coma qué tal" {
+		t.Errorf("quedó %q", got)
+	}
+}

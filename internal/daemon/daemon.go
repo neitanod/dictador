@@ -475,7 +475,21 @@ func (d *Daemon) applyPartial(text string, gen int) {
 	if gen != d.generation || d.state != recording || text == "" {
 		return
 	}
-	d.ui.SetPartial(text)
+	d.ui.SetPartial(Preview(text, d.cfg))
+}
+
+// Preview es cómo se ve el dictado mientras hablás.
+//
+// Los comandos van aplicados acá también: leer "abre pregunta cómo andás signo
+// de pregunta" en la ventanita y que recién al soltar aparezca "¿cómo andás?"
+// obliga a traducir de cabeza lo que va a pasar. Lo que se lee es lo que se va
+// a escribir.
+//
+// Los retoques de entrega —sacar el punto final, el espacio de atrás— quedan
+// afuera a propósito: el parcial todavía está creciendo, y el punto de ahora no
+// es el final de nada.
+func Preview(text string, cfg config.Config) string {
+	return commands.Compile(text, commands.OptionsFrom(cfg)).Text()
 }
 
 // ---- cierre del dictado ---------------------------------------------------
