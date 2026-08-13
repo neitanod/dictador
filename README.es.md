@@ -71,7 +71,12 @@ dictador config set hotkey.cancel_on_other_key false
 | `keep_open` | lo copia y deja la ventanita abierta para que lo leas |
 
 En las terminales pega con `Ctrl+Shift+V`, que es lo que ahí funciona: se las
-reconoce por su `WM_CLASS`.
+reconoce por su `WM_CLASS`. Si tenés una que la lista de fábrica no conoce,
+`dictador window` te dice su clase, parado en esa ventana, y se la sumás:
+
+```bash
+dictador config set action.terminal_classes '[mi-terminal]'
+```
 
 ### Modo toggle
 
@@ -279,6 +284,7 @@ red y una llamada facturada.
 | `dictador bench` | compara los motores con tu voz |
 | `dictador doctor` | chequea que todo esté en su lugar |
 | `dictador keys [filtro]` | lista las teclas del mapa actual |
+| `dictador window [-w N]` | qué ve el dictador en la ventana de enfrente y cómo le pegaría |
 | `dictador commands [--try "frase"]` | lista los comandos hablados, o prueba una frase |
 | `dictador config [show\|init\|edit\|path\|set\|web]` | ver o editar la configuración |
 | `dictador history [-n N]` | los últimos dictados |

@@ -24,6 +24,7 @@ comandos:
   bench      compara los motores con tu voz para elegir el tuyo
   doctor     chequea que todo lo necesario esté en su lugar
   keys       lista las teclas del mapa actual, para elegir el hotkey
+  window     qué ve el dictador en la ventana de enfrente y cómo le pegaría
   commands   lista los comandos hablados (--try "hola coma qué tal" los prueba)
   config     ver o editar la configuración (show | init | edit | path | set | web [--no-open])
   history    últimos dictados
@@ -91,6 +92,8 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return cmdDoctor(&opts, rest)
 	case "keys":
 		return cmdKeys(&opts, rest)
+	case "window":
+		return cmdWindow(&opts, rest)
 	case "commands":
 		return cmdCommands(&opts, rest)
 	case "config":

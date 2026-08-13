@@ -118,7 +118,7 @@ func cmdOnce(opts *options, args []string) int {
 			return 1
 		}
 		if *paste {
-			if code := pasteNow(o, text); code != 0 {
+			if code := pasteNow(o, cfg.Action.TerminalClasses); code != 0 {
 				return code
 			}
 		}
@@ -136,7 +136,7 @@ func cmdOnce(opts *options, args []string) int {
 }
 
 // pasteNow pega en la ventana que estaba enfocada al terminar.
-func pasteNow(o out, _ string) int {
+func pasteNow(o out, terminals []string) int {
 	conn, err := x11.Open()
 	if err != nil {
 		o.fail(err, "X11")
@@ -149,7 +149,7 @@ func pasteNow(o out, _ string) int {
 	}
 	target := conn.ActiveWindow()
 	combo := "ctrl+v"
-	if x11.IsTerminal(target.Class) {
+	if x11.IsTerminalWith(target.Class, terminals) {
 		combo = "ctrl+shift+v"
 	}
 	// Un respiro para que el clipboard quede tomado antes del Ctrl+V.

@@ -71,6 +71,9 @@ type Action struct {
 	RestoreFocus     bool   `toml:"restore_focus"`
 	TrailingSpace    bool   `toml:"trailing_space"`
 	StripFinalPeriod bool   `toml:"strip_final_period"`
+	// TerminalClasses suma ventanas a las que se les pega con Ctrl+Shift+V, por
+	// si tenés una terminal que la lista de fábrica no conoce.
+	TerminalClasses []string `toml:"terminal_classes"`
 }
 
 // Commands: los comandos hablados que se vuelven signos, teclas o borrados.

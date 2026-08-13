@@ -43,8 +43,12 @@ auto_gain = true           # levanta el volumen si el micrófono viene flojo
 [action]
 on_release = "paste"       # paste | type | clipboard | keep_open
 restore_focus = true
-trailing_space = false
+trailing_space = false     # un espacio atrás del texto, para dictar de a bloques
 strip_final_period = false
+# Las terminales pegan con Ctrl+Shift+V y el resto con Ctrl+V. Si tenés una que
+# la lista de fábrica no conoce, sumá acá su clase de ventana: la dice
+# "dictador window", parado en esa ventana.
+terminal_classes = []
 
 [overlay]
 enabled = true

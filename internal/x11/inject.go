@@ -11,26 +11,52 @@ import (
 
 // TerminalClasses son las ventanas donde Ctrl+V no pega: las terminales usan
 // Ctrl+Shift+V.
+//
+// La lista se queda corta cada vez que aparece una terminal nueva, y por eso el
+// config tiene `terminal_classes` para sumarle una sin recompilar.
 var TerminalClasses = map[string]bool{
 	"konsole": true, "yakuake": true, "xterm": true, "uxterm": true,
 	"gnome-terminal": true, "gnome-terminal-server": true, "alacritty": true,
 	"kitty": true, "wezterm": true, "terminator": true, "tilix": true,
 	"xfce4-terminal": true, "urxvt": true, "rxvt": true, "st": true,
 	"foot": true, "ghostty": true, "hyper": true, "warp": true,
+	// Las desplegables, que son las que más se usan con un atajo.
+	"guake": true, "tilda": true, "ddterm": true,
+	// El resto del zoológico de Linux.
+	"sakura": true, "lxterminal": true, "mate-terminal": true,
+	"qterminal": true, "roxterm": true, "terminology": true,
+	"deepin-terminal": true, "cool-retro-term": true, "termite": true,
+	"mlterm": true, "eterm": true, "kgx": true, "console": true,
+	"terminal": true, "blackbox": true, "tabby": true, "rio": true,
+	"contour": true, "zutty": true, "extraterm": true, "waveterm": true,
 }
 
 // IsTerminal dice si en esa clase de ventana hay que pegar con Ctrl+Shift+V.
+func IsTerminal(class string) bool { return IsTerminalWith(class, nil) }
+
+// IsTerminalWith es lo mismo, con las clases que el usuario agregó en su config.
 //
 // Las terminales nuevas se presentan con el app-id en reverse-DNS
 // ("org.wezfurlong.wezterm", "com.mitchellh.ghostty"), así que además de la
 // clase entera se prueba el último segmento, que es donde está el nombre.
-func IsTerminal(class string) bool {
+func IsTerminalWith(class string, extra []string) bool {
 	class = strings.ToLower(strings.TrimSpace(class))
-	if TerminalClasses[class] {
-		return true
+	if class == "" {
+		return false
 	}
+	names := []string{class}
 	if dot := strings.LastIndex(class, "."); dot >= 0 {
-		return TerminalClasses[class[dot+1:]]
+		names = append(names, class[dot+1:])
+	}
+	for _, name := range names {
+		if TerminalClasses[name] {
+			return true
+		}
+		for _, candidate := range extra {
+			if name == strings.ToLower(strings.TrimSpace(candidate)) {
+				return true
+			}
+		}
 	}
 	return false
 }

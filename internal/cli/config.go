@@ -179,7 +179,25 @@ func configSet(opts *options, args []string) int {
 }
 
 // parseValue adivina el tipo del valor que se escribió en la línea de comandos.
+//
+// Los corchetes son la única marca de lista, y son obligatorios: adivinar por
+// las comas convertiría en lista a un initial_prompt que tenga una.
 func parseValue(raw string) any {
+	if trimmed := strings.TrimSpace(raw); strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+		inner := strings.TrimSpace(trimmed[1 : len(trimmed)-1])
+		if inner == "" {
+			return []any{}
+		}
+		items := []any{}
+		for _, part := range strings.Split(inner, ",") {
+			part = strings.TrimSpace(part)
+			part = strings.Trim(part, `"'`)
+			if part != "" {
+				items = append(items, part)
+			}
+		}
+		return items
+	}
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "true":
 		return true

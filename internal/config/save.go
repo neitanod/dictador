@@ -96,6 +96,18 @@ func tomlValue(value any) string {
 		esc := strings.ReplaceAll(v, `\`, `\\`)
 		esc = strings.ReplaceAll(esc, `"`, `\"`)
 		return `"` + esc + `"`
+	case []string:
+		items := make([]any, len(v))
+		for i, s := range v {
+			items[i] = s
+		}
+		return tomlValue(items)
+	case []any:
+		parts := make([]string, len(v))
+		for i, item := range v {
+			parts[i] = tomlValue(item)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
 	default:
 		return `"` + fmt.Sprint(v) + `"`
 	}

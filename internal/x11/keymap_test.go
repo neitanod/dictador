@@ -161,6 +161,12 @@ func TestIsTerminalReconoceLasQuePeganConCtrlShiftV(t *testing.T) {
 			t.Errorf("%q es una terminal", class)
 		}
 	}
+	// Las desplegables, que son las que más se usan con un atajo.
+	for _, class := range []string{"Guake", "guake", "tilda"} {
+		if !IsTerminal(class) {
+			t.Errorf("%q es una terminal", class)
+		}
+	}
 	// Las que se presentan con el app-id en reverse-DNS.
 	for _, class := range []string{"org.wezfurlong.wezterm", "com.mitchellh.ghostty", "org.gnome.Terminator"} {
 		if !IsTerminal(class) {
@@ -171,6 +177,21 @@ func TestIsTerminalReconoceLasQuePeganConCtrlShiftV(t *testing.T) {
 		if IsTerminal(class) {
 			t.Errorf("%q no es una terminal", class)
 		}
+	}
+}
+
+func TestIsTerminalWithSumaLasClasesDelConfig(t *testing.T) {
+	extra := []string{" Mi-Terminal ", "com.ejemplo.rara"}
+	for _, class := range []string{"mi-terminal", "MI-TERMINAL", "com.ejemplo.rara", "org.x.Mi-Terminal"} {
+		if !IsTerminalWith(class, extra) {
+			t.Errorf("%q está en la lista del config", class)
+		}
+	}
+	if IsTerminalWith("firefox", extra) {
+		t.Error("la lista del config no vuelve terminal a cualquiera")
+	}
+	if IsTerminalWith("", extra) {
+		t.Error("una ventana sin clase no es una terminal")
 	}
 }
 

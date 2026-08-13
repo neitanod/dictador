@@ -72,7 +72,13 @@ dictador config set hotkey.cancel_on_other_key false
 | `keep_open` | copies it and keeps the window up so you can read it |
 
 In terminals it pastes with `Ctrl+Shift+V`, which is what works there; they're
-recognized by their `WM_CLASS`.
+recognized by their `WM_CLASS`. If yours is one the built-in list doesn't know,
+`dictador window` tells you its class while you stand in that window, and you
+add it:
+
+```bash
+dictador config set action.terminal_classes '[my-terminal]'
+```
 
 ### Toggle mode
 
@@ -286,6 +292,7 @@ and a billed call.
 | `dictador bench` | compares the engines using your voice |
 | `dictador doctor` | checks everything is where it should be |
 | `dictador keys [filter]` | lists the keys in the current map |
+| `dictador window [-w N]` | what the dictator sees in the window in front, and how it would paste |
 | `dictador commands [--try "phrase"]` | lists the spoken commands, or runs a phrase through them |
 | `dictador config [show\|init\|edit\|path\|set\|web]` | view or edit the configuration |
 | `dictador history [-n N]` | the last dictations |

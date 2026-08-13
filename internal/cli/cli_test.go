@@ -234,6 +234,18 @@ func TestParseValueDistingueTipos(t *testing.T) {
 	if v := parseValue("AltGr+Control_R"); v != "AltGr+Control_R" {
 		t.Errorf("una tecla → %v (%T)", v, v)
 	}
+	// Los corchetes son lo único que hace una lista: una coma suelta adentro de
+	// un initial_prompt tiene que seguir siendo texto.
+	list, ok := parseValue(`[guake, "org.wezfurlong.wezterm"]`).([]any)
+	if !ok || len(list) != 2 || list[0] != "guake" || list[1] != "org.wezfurlong.wezterm" {
+		t.Errorf("una lista → %#v", parseValue(`[guake, "org.wezfurlong.wezterm"]`))
+	}
+	if v, ok := parseValue("[]").([]any); !ok || len(v) != 0 {
+		t.Errorf("una lista vacía → %#v", parseValue("[]"))
+	}
+	if v := parseValue("hola, qué tal"); v != "hola, qué tal" {
+		t.Errorf("una frase con coma → %v (%T)", v, v)
+	}
 }
 
 // TestTodosLosSubcomandosRegistranSusFlags corre cada uno con -h, que hace que
@@ -242,7 +254,7 @@ func TestParseValueDistingueTipos(t *testing.T) {
 // ese comando — que fue exactamente lo que pasó con `once -q`.
 func TestTodosLosSubcomandosRegistranSusFlags(t *testing.T) {
 	for _, command := range []string{
-		"run", "once", "bench", "doctor", "keys", "config", "history", "service",
+		"run", "once", "bench", "doctor", "keys", "window", "config", "history", "service",
 	} {
 		func() {
 			defer func() {

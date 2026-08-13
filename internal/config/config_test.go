@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -179,6 +180,7 @@ func TestSaveEscribeCadaTipoComoTOML(t *testing.T) {
 		{Section: "stt", Key: "beam_size", Value: 5},
 		{Section: "limits", Key: "min_seconds", Value: 0.35},
 		{Section: "stt", Key: "initial_prompt", Value: `dijo "hola"`},
+		{Section: "action", Key: "terminal_classes", Value: []any{"guake", "org.wezfurlong.wezterm"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -189,6 +191,7 @@ func TestSaveEscribeCadaTipoComoTOML(t *testing.T) {
 		"beam_size = 5",
 		"min_seconds = 0.35",
 		`initial_prompt = "dijo \"hola\""`,
+		`terminal_classes = ["guake", "org.wezfurlong.wezterm"]`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("falta %q en:\n%s", want, out)
@@ -201,6 +204,9 @@ func TestSaveEscribeCadaTipoComoTOML(t *testing.T) {
 	}
 	if cfg.STT.BeamSize != 5 || cfg.STT.VadFilter || cfg.STT.InitialPrompt != `dijo "hola"` {
 		t.Errorf("releído mal: %+v", cfg.STT)
+	}
+	if len(cfg.Action.TerminalClasses) != 2 || cfg.Action.TerminalClasses[0] != "guake" {
+		t.Errorf("la lista releída mal: %+v", cfg.Action.TerminalClasses)
 	}
 }
 
@@ -225,7 +231,16 @@ func TestLaPlantillaParseaYCoincideConLosDefaults(t *testing.T) {
 	if cfg.Hotkey != def.Hotkey {
 		t.Errorf("[hotkey] de la plantilla ≠ defaults:\n%+v\n%+v", cfg.Hotkey, def.Hotkey)
 	}
-	if cfg.Action != def.Action {
+	// La plantilla trae `terminal_classes = []`, que parsea como slice vacío, y
+	// los defaults lo dejan en nil: para esta comparación son lo mismo.
+	act, defAct := cfg.Action, def.Action
+	if len(act.TerminalClasses) == 0 {
+		act.TerminalClasses = nil
+	}
+	if len(defAct.TerminalClasses) == 0 {
+		defAct.TerminalClasses = nil
+	}
+	if !reflect.DeepEqual(act, defAct) {
 		t.Errorf("[action] de la plantilla ≠ defaults:\n%+v\n%+v", cfg.Action, def.Action)
 	}
 	if cfg.Limits != def.Limits {

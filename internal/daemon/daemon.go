@@ -652,7 +652,7 @@ func (d *Daemon) put(plan commands.Plan, action string) error {
 	default:
 		focused := false
 		combo := "ctrl+v"
-		if x11.IsTerminal(d.target.Class) {
+		if x11.IsTerminalWith(d.target.Class, d.cfg.Action.TerminalClasses) {
 			combo = "ctrl+shift+v"
 		}
 		for i, step := range plan.Steps {
