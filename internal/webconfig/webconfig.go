@@ -102,6 +102,7 @@ func New(cfg config.Config) (*Server, error) {
 	mux.HandleFunc("/commands", s.handleCommands)
 	mux.HandleFunc("/edit", s.handleEdit)
 	mux.HandleFunc("/desktop-icon", s.handleDesktopIcon)
+	mux.HandleFunc("/icon.svg", s.handleIcon)
 	mux.HandleFunc("/quit", s.handleQuit)
 	s.server = &http.Server{Handler: mux}
 	go func() { _ = s.server.Serve(listener) }()

@@ -22,6 +22,15 @@ import (
 //go:embed icon.svg
 var iconSVG []byte
 
+// IconSVG es el dibujo del dictador, para el que quiera mostrarlo sin instalar
+// nada: la configuración web lo sirve como favicon y lo pone arriba del título.
+// Vive acá y no en una copia al lado de la página porque un ícono que se ve en
+// la pantalla distinto del que aparece en el escritorio es peor que no tener
+// ninguno de los dos.
+func IconSVG() []byte {
+	return iconSVG
+}
+
 // fileName es el nombre del .desktop en todas las carpetas donde va. Es el
 // mismo a propósito: el escritorio identifica una aplicación por ese nombre, y
 // con dos distintos el menú y el autostart aparecerían como dos programas.

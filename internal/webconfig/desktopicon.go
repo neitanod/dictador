@@ -15,6 +15,23 @@ import (
 	"github.com/neitanod/dictador/internal/desktop"
 )
 
+// handleIcon sirve el mismo dibujo que se instala en el escritorio, para que la
+// página lo muestre arriba del título y lo use de favicon.
+//
+// Es el favicon el que obliga a que esto sea una dirección y no un SVG pegado
+// dentro del HTML: el browser lo pide aparte. Y en la ventana que abre `dictador
+// config` —un Chrome en modo --app, sin barra de direcciones— ese favicon es
+// además el ícono que se ve en la barra de tareas mientras la configuración
+// está abierta.
+func (s *Server) handleIcon(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	// El server escucha en un puerto distinto cada vez que abrís la
+	// configuración, así que una copia guardada no se reusaría casi nunca y sí
+	// podría mostrar el ícono viejo después de actualizar el programa.
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(desktop.IconSVG())
+}
+
 // iconActions es lo que la página puede hacerle al escritorio.
 type iconActions struct {
 	install       func() (desktop.Result, error)

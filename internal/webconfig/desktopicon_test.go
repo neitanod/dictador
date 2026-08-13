@@ -1,8 +1,10 @@
 package webconfig
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -171,5 +173,45 @@ func TestDesktopIconCuentaSiElArranqueAutomaticoFalla(t *testing.T) {
 	code, reply := iconRequest(t, s, http.MethodPost, `{"action":"autostart-on"}`)
 	if code != http.StatusInternalServerError || !strings.Contains(reply.Error, "disco") {
 		t.Fatalf("code=%d reply=%+v", code, reply)
+	}
+}
+
+// El ícono que muestra la página y el que se instala en el escritorio son el
+// mismo archivo. Que lo sigan siendo es lo que estas dos pruebas cuidan: una
+// copia al lado de la página se despega del original en cuanto alguien cambia
+// el dibujo, y nadie se entera hasta ver dos dictadores distintos en la pantalla
+// y en el escritorio.
+func TestLaPáginaSirveElMismoÍconoQueVaAlEscritorio(t *testing.T) {
+	server := newServer(t, config.Defaults())
+
+	answer, err := http.Get(server.URL() + "icon.svg")
+	if err != nil {
+		t.Fatalf("no pude pedir el ícono: %v", err)
+	}
+	defer answer.Body.Close()
+	body, _ := io.ReadAll(answer.Body)
+
+	if answer.StatusCode != http.StatusOK {
+		t.Fatalf("el ícono dio %d", answer.StatusCode)
+	}
+	// Sin el tipo, el browser se lo baja en vez de dibujarlo, y el favicon no
+	// aparece.
+	if got := answer.Header.Get("Content-Type"); got != "image/svg+xml" {
+		t.Errorf("Content-Type = %q", got)
+	}
+	if !bytes.Equal(body, desktop.IconSVG()) {
+		t.Errorf("la página sirve un dibujo distinto del que se instala (%d bytes contra %d)",
+			len(body), len(desktop.IconSVG()))
+	}
+}
+
+func TestLaPáginaMuestraElÍcono(t *testing.T) {
+	body := get(t, newServer(t, config.Defaults()).URL())
+
+	if !strings.Contains(body, `<link rel="icon" type="image/svg+xml" href="/icon.svg">`) {
+		t.Error("la página no declara el favicon: la ventana queda con el ícono genérico del browser")
+	}
+	if !strings.Contains(body, `<img src="/icon.svg"`) {
+		t.Error("el dictador no se ve en la pantalla de configuración")
 	}
 }

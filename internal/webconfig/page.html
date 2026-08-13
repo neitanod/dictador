@@ -6,6 +6,10 @@
      encima de la ventana. Es nuestra página y ya está en el idioma que va. -->
 <meta name="google" content="notranslate">
 <title>Dictador — configuración</title>
+<!-- El mismo dibujo que va al escritorio. Acá es el favicon, y como esta ventana
+     la abre un Chrome en modo aplicación —sin barra de direcciones— es también
+     el ícono que se ve en la barra de tareas mientras la config está abierta. -->
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
 <style>
   :root {
     color-scheme: dark;
@@ -26,6 +30,12 @@
     display: flex; justify-content: center;
   }
   main { width: 100%; max-width: 560px; }
+  /* El ícono y el nombre, arriba de todo: el título de la página es una
+     pregunta —"¿con qué motor…?"— y una pregunta sola no dice de qué programa
+     es la ventana. */
+  .brand { display: flex; align-items: center; gap: 11px; margin: 0 0 22px; }
+  .brand img { width: 44px; height: 44px; display: block; }
+  .brand span { font-size: 16px; font-weight: 600; }
   h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
   .sub { color: var(--dim); font-size: 12px; margin: 0 0 26px; }
   fieldset { border: 0; margin: 0 0 20px; padding: 0; }
@@ -153,6 +163,13 @@
 </style>
 
 <main>
+  <p class="brand">
+    <!-- alt vacío a propósito: el nombre está escrito al lado y un lector de
+         pantalla que diga "Dictador Dictador" no ayuda a nadie. -->
+    <img src="/icon.svg" alt="" width="44" height="44">
+    <span>Dictador</span>
+  </p>
+
   <h1>¿Con qué motor querés que transcriba?</h1>
   <p class="sub">La tecla del dictado es <strong>{{.HotkeyLabel}}</strong>. Lo que
     no está acá se cambia en <a href="#" id="edit" title="abrirlo con el editor que tengas">
