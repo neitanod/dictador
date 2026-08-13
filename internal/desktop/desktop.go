@@ -345,6 +345,11 @@ func Install(binary string) (Result, error) {
 			"no pude copiar el ícono ("+err.Error()+"), va con el del sistema")
 	} else {
 		result.Icon = IconPath()
+		if err := refreshIcons(); err != nil && needsIconRefresh(name) {
+			result.Notes = append(result.Notes,
+				"el ícono está copiado pero no pude avisarle al escritorio ("+err.Error()+"): "+
+					"si el lanzador aparece con un ícono genérico, cerrá sesión y volvé a entrar")
+		}
 	}
 	entry := Entry(binary, icon, false)
 
@@ -458,11 +463,41 @@ func EnsureIcon() string {
 	if err := writeIcon(); err != nil {
 		return fallbackIcon
 	}
+	_ = refreshIcons()
 	return iconName
 }
 
 func writeIcon() error {
 	return writeBytes(IconPath(), iconSVG, 0o644)
+}
+
+// refreshIcons le avisa al escritorio que hay un ícono nuevo, y es lo que separa
+// "el archivo está donde va" de "el lanzador se ve".
+//
+// Plasma arma la lista de carpetas de íconos cuando arranca la sesión, y
+// ~/.local/share/icons/hicolor/scalable/apps recién existe cuando alguien
+// instala el primer ícono ahí. Como eso pasa justo con la sesión abierta —es lo
+// que hace el botón de la configuración—, el lanzador queda con la hoja de papel
+// del ícono desconocido hasta el próximo login, con el SVG ya escrito y el nombre
+// resolviendo bien para cualquier programa que arranque después. De ahí lo
+// desconcertante del síntoma: el ícono se ve en las Propiedades del atajo y no
+// se ve en el atajo.
+//
+// La señal es la que emite KIconLoader::emitChange, y la escuchan las
+// aplicaciones Qt del escritorio: al recibirla rehacen la lista y encuentran la
+// carpeta nueva. Se manda siempre, sin preguntar qué escritorio corre, porque en
+// los que no la escuchan no hay nadie del otro lado y no pasa nada.
+func refreshIcons() error {
+	_, err := run("dbus-send", "--session", "--type=signal",
+		"/KIconLoader", "org.kde.KIconLoader.iconChanged", "int32:0")
+	return err
+}
+
+// needsIconRefresh dice si a este escritorio hay que avisarle sí o sí. Es el
+// mismo de la familia de KDE: el resto va a buscar el ícono al disco cuando lo
+// necesita, así que no se entera de nada y tampoco tiene de qué enterarse.
+func needsIconRefresh(name string) bool {
+	return name == "KDE Plasma"
 }
 
 func write(path, content string, mode os.FileMode) error {

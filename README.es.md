@@ -49,6 +49,17 @@ La carpeta del escritorio la busca donde el sistema la declara —`XDG_DESKTOP_D
 `user-dirs.dirs`, `xdg-user-dir`— antes de adivinar: en una sesión en castellano
 se llama Escritorio, y un ícono en `~/Desktop` es un ícono que nadie ve.
 
+Copiar el ícono no alcanza para que se vea. Plasma arma la lista de carpetas de
+íconos cuando arranca la sesión, y `~/.local/share/icons/hicolor/scalable/apps`
+recién existe cuando alguien instala el primero ahí: si eso pasa con la sesión
+abierta —que es justo lo que hace este botón— el lanzador queda con la hoja de
+papel del ícono desconocido hasta el próximo login, con el archivo puesto y el
+nombre resolviendo bien para cualquier programa que arranque después. El síntoma
+es desconcertante: el ícono se ve en las Propiedades del atajo y no se ve en el
+atajo. Por eso, después de copiarlo, el dictador emite la señal de D-Bus que las
+aplicaciones Qt escuchan para rehacer esa lista. Donde nadie la escucha, no pasa
+nada.
+
 Como el lanzador invita a hacerle doble click de nuevo cuando no ves ninguna
 ventana, hay un candado: el segundo `dictador run` se va sin tocar nada en vez
 de ponerse a dictar en paralelo con el primero —los dos escuchan la tecla y el

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -312,5 +313,64 @@ func TestAutostartSePoneYSeSaca(t *testing.T) {
 	// Sacarlo dos veces es lo mismo que sacarlo una.
 	if err := RemoveAutostart(); err != nil {
 		t.Fatalf("el segundo se quejó: %v", err)
+	}
+}
+
+// El caso que hizo falta arreglar: el ícono copiado con la sesión abierta y el
+// lanzador mostrando la hoja de papel del ícono desconocido, porque Plasma armó
+// la lista de carpetas cuando arrancó y la nuestra todavía no existía.
+func TestInstallLeAvisaAlEscritorioDelÍconoNuevo(t *testing.T) {
+	home := fakeHome(t)
+	t.Setenv("XDG_CURRENT_DESKTOP", "KDE")
+	if err := os.MkdirAll(filepath.Join(home, "Desktop"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var asked [][]string
+	run = func(name string, args ...string) ([]byte, error) {
+		asked = append(asked, append([]string{name}, args...))
+		return nil, nil
+	}
+
+	if _, err := Install("/usr/local/bin/dictador"); err != nil {
+		t.Fatal(err)
+	}
+
+	var signal []string
+	for _, call := range asked {
+		if call[0] == "dbus-send" {
+			signal = call
+		}
+	}
+	if signal == nil {
+		t.Fatalf("nadie avisó que hay un ícono nuevo; se corrió %v", asked)
+	}
+	if !slices.Contains(signal, "org.kde.KIconLoader.iconChanged") {
+		t.Errorf("la señal no es la que las aplicaciones escuchan: %v", signal)
+	}
+}
+
+func TestInstallAvisaCuandoNoPudoAvisar(t *testing.T) {
+	home := fakeHome(t)
+	t.Setenv("XDG_CURRENT_DESKTOP", "KDE")
+	if err := os.MkdirAll(filepath.Join(home, "Desktop"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// fakeHome deja todos los programas de afuera rotos, así que la señal falla.
+	result, err := Install("/usr/local/bin/dictador")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Notes) == 0 || !strings.Contains(strings.Join(result.Notes, " "), "cerrá sesión") {
+		t.Errorf("en KDE, no poder avisar sin decirlo deja al usuario mirando un ícono genérico sin saber por qué: %v", result.Notes)
+	}
+	// En los escritorios que van a buscar el ícono al disco no hay nada que
+	// explicar, y la nota sería ruido.
+	t.Setenv("XDG_CURRENT_DESKTOP", "XFCE")
+	result, err = Install("/usr/local/bin/dictador")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(result.Notes, " "), "cerrá sesión") {
+		t.Errorf("Xfce no necesita el aviso: %v", result.Notes)
 	}
 }

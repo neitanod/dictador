@@ -51,6 +51,17 @@ The desktop folder is looked up where the system declares it —`XDG_DESKTOP_DIR
 `user-dirs.dirs`, `xdg-user-dir`— before guessing: on a Spanish session it is
 called Escritorio, and an icon in `~/Desktop` is an icon nobody sees.
 
+Copying the icon is not enough for it to show up. Plasma builds its list of icon
+folders when the session starts, and `~/.local/share/icons/hicolor/scalable/apps`
+only exists once somebody installs the first icon there: when that happens with
+the session already running —exactly what this button does— the launcher keeps
+the blank-page unknown icon until the next login, with the file in place and the
+name resolving fine for any program started afterwards. The symptom is
+bewildering: the icon shows up in the shortcut's Properties dialog and not on the
+shortcut. So, right after copying it, dictador emits the D-Bus signal Qt
+applications listen to in order to rebuild that list. Where nobody is listening,
+nothing happens.
+
 Since a launcher invites a second double click when no window ever shows up,
 there is a lock: the second `dictador run` leaves without touching anything
 instead of dictating alongside the first one —both would hear the key and the
