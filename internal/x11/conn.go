@@ -15,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/jezek/xgb"
@@ -27,6 +28,11 @@ type Conn struct {
 	Setup  *xproto.SetupInfo
 	Screen *xproto.ScreenInfo
 	Root   xproto.Window
+
+	// Las extensiones se registran contra una conexión, no contra el proceso:
+	// cada Conn tiene que inicializar las suyas. Ver randrInit en monitors.go.
+	randrOnce sync.Once
+	randrErr  error
 }
 
 // Open abre una conexión al display de la variable DISPLAY.

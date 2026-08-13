@@ -2,7 +2,6 @@ package x11
 
 import (
 	"sort"
-	"sync"
 
 	"github.com/jezek/xgb/randr"
 	"github.com/jezek/xgb/xproto"
@@ -29,7 +28,18 @@ func (m Monitor) Contains(x, y int) bool {
 	return x >= m.X && x < m.X+m.Width && y >= m.Y && y < m.Y+m.Height
 }
 
-var randrOnce sync.Once
+// randrInit registra RANDR en esta conexión, una sola vez por conexión.
+//
+// El registro es por conexión: xgb guarda el número de opcode de la extensión
+// adentro del Conn, así que una conexión nueva no hereda nada de las anteriores.
+// Cuando esto se hacía una vez por proceso, la primera conexión que pedía
+// monitores se quedaba con el init y cualquier otra —la del overlay, la que
+// abre la ventana de configuración— llegaba a QueryVersion sin extensión, que
+// en xgb es un pánico.
+func (c *Conn) randrInit() error {
+	c.randrOnce.Do(func() { c.randrErr = randr.Init(c.X) })
+	return c.randrErr
+}
 
 // Monitors lista las pantallas activas, de izquierda a derecha.
 //
@@ -44,9 +54,7 @@ func (c *Conn) Monitors() []Monitor {
 		Primary: true,
 	}}
 
-	var initErr error
-	randrOnce.Do(func() { initErr = randr.Init(c.X) })
-	if initErr != nil {
+	if c.randrInit() != nil {
 		return whole
 	}
 	// GetMonitors es de RandR 1.5; preguntarle la versión primero evita el
