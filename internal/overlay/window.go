@@ -291,17 +291,39 @@ func (w *Window) SetError(message string) {
 	w.show()
 }
 
+// Dismiss saca la ventanita de la pantalla.
+//
+// Bajarla acá mismo sería lo obvio y está mal. A Dismiss lo llama el daemon,
+// desde su goroutine, cuando le llega el click; y el bucle de dibujo, en la
+// suya, se pasa la mitad del tiempo armando un cuadro —cuarenta milisegundos de
+// cada ochenta con una pantalla, más con tres—. Si el click cae adentro de uno
+// de esos cuadros, y cae seguido, el bucle termina de pintar después del unmap
+// y vuelve a mapear la ventana que se acababa de bajar. Ahí la ventanita se
+// queda para siempre: ya nadie va a pedir otro redibujo que la baje, porque
+// para todo el mundo está oculta.
+//
+// Así que Dismiss marca que ya no va y despierta al bucle, que es el único que
+// mapea y desmapea. Mande quien mande, el que tiene la última palabra sobre lo
+// que se ve es siempre el mismo.
 func (w *Window) Dismiss() {
 	w.mu.Lock()
 	w.hideAt = time.Time{}
 	w.visible = false
+	w.mu.Unlock()
+	w.wake()
+}
+
+// hide baja las ventanas de la pantalla. Corre siempre en el bucle de dibujo.
+func (w *Window) hide() {
+	w.mu.Lock()
 	surfaces := append([]*surface(nil), w.surfaces...)
 	w.mu.Unlock()
 	for _, s := range surfaces {
-		if s.mapped {
-			s.mapped = false
-			_ = xproto.UnmapWindowChecked(w.conn.X, s.win).Check()
+		if !s.mapped {
+			continue
 		}
+		s.mapped = false
+		_ = xproto.UnmapWindowChecked(w.conn.X, s.win).Check()
 	}
 }
 
@@ -346,6 +368,13 @@ func (w *Window) show() {
 	w.wake()
 }
 
+// stillVisible dice si la ventanita sigue teniendo que estar en pantalla.
+func (w *Window) stillVisible() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.visible
+}
+
 func (w *Window) wake() {
 	select {
 	case w.redraw <- struct{}{}:
@@ -369,6 +398,9 @@ func (w *Window) tick() {
 			visible, hideAt := w.visible, w.hideAt
 			w.mu.Unlock()
 			if !visible {
+				// La red de abajo: si algo la dejó mapeada sin querer, acá se
+				// baja. Cuando ya está bajada no cuesta nada, ni un pedido a X.
+				w.hide()
 				continue
 			}
 			if !hideAt.IsZero() && time.Now().After(hideAt) {
@@ -386,9 +418,19 @@ func (w *Window) paint() {
 	screen, position := w.screen, w.position
 	w.mu.Unlock()
 	if !visible {
+		w.hide()
 		return
 	}
+	w.drawFrame(current, screen, position)
+}
 
+// drawFrame arma el cuadro y lo pone en pantalla.
+//
+// Va aparte de paint porque tarda: el cuadro se arma con el estado leído al
+// entrar y sale a la pantalla bastante después —rasterizar el texto y mandarle
+// los píxeles a X son decenas de milisegundos—, y en el medio puede haber
+// llegado el Dismiss del click.
+func (w *Window) drawFrame(current frame, screen, position string) {
 	w.syncSurfaces(targets(w.conn, screen))
 
 	w.mu.Lock()
@@ -400,6 +442,15 @@ func (w *Window) paint() {
 	// para cada pantalla.
 	frames := map[int]*image.RGBA{}
 	for _, s := range surfaces {
+		// Si mientras se armaba el cuadro llegó el Dismiss, este cuadro ya no
+		// va: bajar lo que quede y salir. El chequeo va adentro del bucle porque
+		// con una ventanita por pantalla cada vuelta cuesta lo suyo, y no tiene
+		// sentido que la del tercer monitor se cuele después de que se bajó la
+		// del primero.
+		if !w.stillVisible() {
+			w.hide()
+			return
+		}
 		width := w.widthFor(s.monitor)
 		img, ok := frames[width]
 		if !ok {
