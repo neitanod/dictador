@@ -294,6 +294,101 @@
   <hr>
 
   <footer class="danger">
+    <button type="button" id="desktopIcon">Agregar ícono al escritorio</button>
+    <span class="hint" id="desktopHint">Para arrancarlo con doble click en vez de
+      con la terminal. Queda corriendo sin ventana: no se ve nada hasta que
+      apretás la tecla.</span>
+  </footer>
+  <label class="show" style="margin-left:2px">
+    <input type="checkbox" id="autostart"> y que arranque solo cuando prendas la máquina
+  </label>
+
+  <script>
+    // El ícono del escritorio se pregunta y se pide por fetch en vez de venir
+    // dibujado en el HTML: apretarlo cambia lo que el botón tiene que decir, y
+    // así se redibuja sin recargar una página donde podés estar a mitad de
+    // escribir la API key.
+    (() => {
+      const button = document.getElementById('desktopIcon');
+      const hint = document.getElementById('desktopHint');
+      const autostart = document.getElementById('autostart');
+      const intro = 'Para arrancarlo con doble click en vez de con la terminal. ' +
+        'Queda corriendo sin ventana: no se ve nada hasta que apretás la tecla.';
+      let installed = false;
+
+      function draw(state) {
+        installed = !!state.installed;
+        button.disabled = false;
+        autostart.disabled = false;
+        autostart.checked = !!state.autostart;
+        button.textContent = installed
+          ? 'Sacar el ícono del escritorio'
+          : 'Agregar ícono al escritorio';
+        // Sacar el ícono no es matar nada: va en gris, que el rojo de acá abajo
+        // es el del botón que apaga el dictado.
+        button.classList.toggle('ghost', installed);
+        const parts = [];
+        if (state.flash && !state.error) parts.push(state.flash);
+        if (state.error) {
+          parts.push(state.error);
+        } else if (installed) {
+          parts.push('Está en ' + (state.shortcut || 'tu escritorio') + '.');
+          if (state.desktop) parts.push('Escritorio detectado: ' + state.desktop + '.');
+          if (state.note) parts.push(state.note);
+        } else {
+          parts.push(intro);
+          if (state.desktop) parts.push('Escritorio detectado: ' + state.desktop + '.');
+        }
+        hint.className = state.error ? 'hint warn' : 'hint';
+        hint.textContent = parts.join(' ');
+      }
+
+      async function ask(options, flash) {
+        button.disabled = true;
+        autostart.disabled = true;
+        try {
+          const answer = await fetch('/desktop-icon', options);
+          const body = await answer.json();
+          draw(answer.ok
+            ? Object.assign({flash}, body)
+            : {installed, autostart: autostart.checked, error: body.error || 'no pude'});
+        } catch (error) {
+          draw({installed, error: 'no pude hablar con el dictador'});
+        }
+      }
+
+      button.addEventListener('click', () => {
+        hint.className = 'hint';
+        hint.textContent = installed ? 'sacándolo…' : 'poniéndolo…';
+        ask({
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({action: installed ? 'remove' : 'install'}),
+        });
+      });
+
+      autostart.addEventListener('change', () => {
+        const wanted = autostart.checked;
+        hint.className = 'hint';
+        hint.textContent = wanted
+          ? 'de ahora en más arranca solo…'
+          : 'listo, ya no arranca solo…';
+        ask({
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({action: wanted ? 'autostart-on' : 'autostart-off'}),
+        }, wanted
+          ? 'Listo: de ahora en más arranca solo al iniciar sesión.'
+          : 'Listo: ya no arranca solo.');
+      });
+
+      ask({method: 'GET'});
+    })();
+  </script>
+
+  <hr>
+
+  <footer class="danger">
     <button type="button" class="kill" id="kill">Matar al dictador</button>
     <span class="hint">Cierra el programa y esta página. La tecla deja de dictar
       hasta que lo arranques de nuevo con <code>dictador run</code>.</span>

@@ -68,6 +68,10 @@ type Server struct {
 	// directa para que las pruebas puedan pedirlo sin que se abra un editor de
 	// verdad en la máquina del que las corre.
 	edit func(path string) error
+	// icon pone y saca el ícono del escritorio, y es un campo por lo mismo:
+	// las pruebas lo piden sin llenarle el escritorio de lanzadores al que las
+	// corre. Vive en desktopicon.go.
+	icon iconActions
 }
 
 // New levanta el server en un puerto al azar de loopback.
@@ -90,12 +94,14 @@ func New(cfg config.Config) (*Server, error) {
 		quit:     make(chan struct{}),
 		tmpl:     tmpl,
 		edit:     openEditor,
+		icon:     realIcon,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handlePage)
 	mux.HandleFunc("/save", s.handleSave)
 	mux.HandleFunc("/commands", s.handleCommands)
 	mux.HandleFunc("/edit", s.handleEdit)
+	mux.HandleFunc("/desktop-icon", s.handleDesktopIcon)
 	mux.HandleFunc("/quit", s.handleQuit)
 	s.server = &http.Server{Handler: mux}
 	go func() { _ = s.server.Serve(listener) }()

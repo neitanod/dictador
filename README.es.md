@@ -25,8 +25,31 @@ make install          # compila y deja el binario en ~/.local/bin
 dictador doctor       # chequea que todo esté en su lugar
 ```
 
-`make install` no toca nada del sistema: compila y copia. Para que arranque solo
-en cada login, `dictador service install`.
+`make install` no toca nada del sistema: compila y copia. Para tenerlo a un doble
+click, `dictador desktop install` deja el ícono en el escritorio y la entrada en
+el menú; para que arranque solo en cada login, `dictador service install`. Las
+dos cosas también están abajo de todo en la página de configuración.
+
+### El ícono del escritorio
+
+El dictado corre sin ventana —no se ve nada hasta que apretás la tecla—, y eso
+deja al que lo instala sin ninguna manera de prenderlo que no sea la terminal.
+`dictador desktop install` la saca del medio: escribe el mismo `.desktop` de
+freedesktop.org en el escritorio y en el menú, con el ícono propio, y hace
+además lo que cada escritorio pide para tratarlo como un lanzador y no como un
+archivo de texto: el bit de ejecución en todos, y en GNOME, Cinnamon y MATE la
+marca de confianza que si no muestra "lanzador no confiable".
+
+La carpeta del escritorio la busca donde el sistema la declara —`XDG_DESKTOP_DIR`,
+`user-dirs.dirs`, `xdg-user-dir`— antes de adivinar: en una sesión en castellano
+se llama Escritorio, y un ícono en `~/Desktop` es un ícono que nadie ve.
+
+Como el lanzador invita a hacerle doble click de nuevo cuando no ves ninguna
+ventana, hay un candado: el segundo `dictador run` se va sin tocar nada en vez
+de ponerse a dictar en paralelo con el primero —los dos escuchan la tecla y el
+texto saldría duplicado—. Y lanzado desde el ícono avisa por notificación que
+arrancó, que es la única señal de vida que puede dar un programa que a propósito
+no se ve por ningún lado.
 
 ## Uso
 
@@ -306,6 +329,7 @@ red y una llamada facturada.
 | `dictador commands [--try "frase"]` | lista los comandos hablados, o prueba una frase |
 | `dictador config [show\|init\|edit\|path\|set\|web]` | ver o editar la configuración |
 | `dictador history [-n N]` | los últimos dictados |
+| `dictador desktop [install\|uninstall\|status]` | ícono en el escritorio y entrada en el menú |
 | `dictador service [install\|uninstall\|status]` | autostart en el login |
 
 Todos aceptan `--json`, así que la CLI se puede scriptear:

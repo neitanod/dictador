@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/neitanod/dictador/internal/config"
 )
 
 func TestElCandadoDejaPasarUnoSolo(t *testing.T) {
@@ -76,6 +78,16 @@ func TestElCandadoTieneLugarSinRuntimeDir(t *testing.T) {
 	}
 }
 
+func TestElAvisoDiceQueTeclaHayQueApretar(t *testing.T) {
+	if got := hotkeyLabel(config.Config{Hotkey: config.Hotkey{Key: "AltGr+Control_R"}}); got != "AltGr+Control_R" {
+		t.Errorf("dio %q, y tiene que decir la tecla del config", got)
+	}
+	// Sin tecla configurada igual tiene que decir algo que se entienda.
+	if got := hotkeyLabel(config.Config{}); got == "" {
+		t.Error("sin tecla en el config el aviso se quedó mudo")
+	}
+}
+
 func TestRunNoArrancaDosVeces(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
@@ -94,5 +106,9 @@ func TestRunNoArrancaDosVeces(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "Ya estaba andando") {
 		t.Errorf("tendría que decir que ya hay uno: %q", stderr)
+	}
+	// Y decir qué tecla mantener, que es lo único accionable del mensaje.
+	if !strings.Contains(stderr, "Mantené") || !strings.Contains(stderr, "Control") {
+		t.Errorf("tendría que nombrar la tecla: %q", stderr)
 	}
 }

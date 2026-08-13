@@ -25,8 +25,32 @@ make install          # builds and drops the binary in ~/.local/bin
 dictador doctor       # checks everything is where it should be
 ```
 
-`make install` touches nothing system-wide: it builds and copies. To have it
-start on every login, `dictador service install`.
+`make install` touches nothing system-wide: it builds and copies. To get it one
+double click away, `dictador desktop install` drops the icon on your desktop and
+the entry in your menu; to have it start on every login, `dictador service
+install`. Both are also at the bottom of the configuration page.
+
+### The desktop icon
+
+Dictation runs with no window —nothing shows up until you press the key— which
+leaves whoever installs it with no way to start it other than a terminal.
+`dictador desktop install` gets that out of the way: it writes the same
+freedesktop.org `.desktop` file to your desktop and to your menu, with its own
+icon, and does whatever each desktop needs to treat it as a launcher rather than
+a text file: the executable bit everywhere, plus the trusted mark GNOME,
+Cinnamon and MATE want before they stop calling it an "untrusted application
+launcher".
+
+The desktop folder is looked up where the system declares it —`XDG_DESKTOP_DIR`,
+`user-dirs.dirs`, `xdg-user-dir`— before guessing: on a Spanish session it is
+called Escritorio, and an icon in `~/Desktop` is an icon nobody sees.
+
+Since a launcher invites a second double click when no window ever shows up,
+there is a lock: the second `dictador run` leaves without touching anything
+instead of dictating alongside the first one —both would hear the key and the
+text would come out twice—. Launched from the icon it also posts a desktop
+notification saying it started, which is the only sign of life a program that
+deliberately stays invisible can give.
 
 ## Use
 
@@ -314,6 +338,7 @@ and a billed call.
 | `dictador commands [--try "phrase"]` | lists the spoken commands, or runs a phrase through them |
 | `dictador config [show\|init\|edit\|path\|set\|web]` | view or edit the configuration |
 | `dictador history [-n N]` | the last dictations |
+| `dictador desktop [install\|uninstall\|status]` | desktop icon and menu entry |
 | `dictador service [install\|uninstall\|status]` | autostart on login |
 
 They all take `--json`, so the CLI can be scripted:

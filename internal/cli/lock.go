@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/neitanod/dictador/internal/config"
 )
 
 // El candado que impide dos dictadores a la vez.
@@ -82,6 +84,19 @@ func readPID(file *os.File) int {
 		return 0
 	}
 	return pid
+}
+
+// hotkeyLabel es la tecla del dictado como la escribiría el que la configuró.
+//
+// Sale del config y no del mapa de teclas de X a propósito: `Combo.Describe()`
+// dice "ISO_Level3_Shift + Control_R (keycode 108, 105)", que sirve para
+// diagnosticar y no para saber qué apretar. Es además lo mismo que muestra la
+// página de configuración, y dos nombres para la misma tecla es uno de más.
+func hotkeyLabel(cfg config.Config) string {
+	if key := strings.TrimSpace(cfg.Hotkey.Key); key != "" {
+		return key
+	}
+	return "la tecla del dictado"
 }
 
 // notify manda una notificación del escritorio, si la máquina tiene con qué.

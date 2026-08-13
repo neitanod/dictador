@@ -20,7 +20,17 @@ func cmdRun(opts *options, args []string) int {
 	}
 	opts.refresh()
 
-	// El candado va antes que todo: si ya hay uno andando, este proceso no tiene
+	// La configuración se lee antes que nada porque de ahí sale la tecla, y la
+	// tecla es lo que hay que decir en los dos caminos: el que arranca y el que
+	// se encuentra con que ya había uno andando.
+	cfg, err := opts.load()
+	if err != nil {
+		opts.out.fail(err, "CONFIG")
+		return 1
+	}
+	hold := "Mantené " + hotkeyLabel(cfg) + " y hablá."
+
+	// Y el candado antes de levantar nada: si ya hay uno, este proceso no tiene
 	// nada que hacer más que decirlo.
 	held, other, err := takeLock()
 	if err == errBusy {
@@ -28,19 +38,13 @@ func cmdRun(opts *options, args []string) int {
 		if other > 0 {
 			message = fmt.Sprintf("Ya estaba andando (proceso %d)", other)
 		}
-		fmt.Fprintf(opts.out.stderr, "%s. Mantené la tecla y hablá.\n", message)
+		fmt.Fprintf(opts.out.stderr, "%s. %s\n", message, hold)
 		if *announce {
-			notify("Dictador", message+". Mantené la tecla y hablá.")
+			notify("Dictador", message+". "+hold)
 		}
 		return 0
 	}
 	defer held.release()
-
-	cfg, err := opts.load()
-	if err != nil {
-		opts.out.fail(err, "CONFIG")
-		return 1
-	}
 
 	d, err := daemon.New(cfg, opts.verbose)
 	if err != nil {
@@ -62,8 +66,11 @@ func cmdRun(opts *options, args []string) int {
 			notify("Dictador sin motor de voz",
 				"Arrancó, pero el motor no contesta: abrí la configuración y elegí otro.")
 		} else {
+			// La tecla va con el nombre que tiene en el config y en la página de
+			// configuración, no con el que devuelve el mapa de X: el aviso está
+			// para que sepas qué apretar, y "keycode 108, 105" no se aprieta.
 			notify("Dictador andando",
-				"Mantené "+d.Combo().Describe()+" y hablá. El texto entra donde estés escribiendo.")
+				hold+" El texto entra donde estés escribiendo.")
 		}
 	}
 	if d.EngineFailed() {
