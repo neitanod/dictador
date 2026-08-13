@@ -62,4 +62,21 @@ hide_delay_ms = 1400
 [limits]
 max_seconds = 120
 min_seconds = 0.35
+
+[commands]
+# Comandos hablados: decir "coma" escribe una coma, "abre pregunta" escribe ¿,
+# "entre corchetes" escribe [] y deja el cursor en el medio, "enter" y "tab" son
+# la tecla de verdad, y "borrar palabra" / "borrá eso" deshacen lo que dictaste.
+# ` + "`dictador commands`" + ` lista todos los que hay.
+enabled = true
+
+# Los tuyos. La clave es lo que decís (sin importar tildes ni mayúsculas) y el
+# valor lo que se escribe. Un valor vacío apaga un comando de fábrica.
+# El espaciado se deduce solo: un valor que empieza con un signo de cierre se
+# pega a la palabra anterior, y uno que termina en uno de apertura a la que
+# sigue. Si querés mandar los espacios vos, ponelos en el valor.
+[commands.replacements]
+# "dos puntos" = ":"
+# "flecha" = "→"
+# "arroba" = "@"
 `

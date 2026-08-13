@@ -170,6 +170,84 @@ else
 fi
 kill "$RECEIVER_PID" 2>/dev/null
 
+# ---- los comandos hablados ------------------------------------------------
+#
+# Acá no alcanza con mirar el portapapeles: "entre corchetes" escribe los dos
+# corchetes y retrocede un lugar, y eso sólo se ve en lo que termina escrito en
+# la ventana. El receiver hace de campo de texto y aplica cada tecla.
+say ""
+say "y los comandos hablados"
+
+kill "$DAEMON_PID" 2>/dev/null
+wait "$DAEMON_PID" 2>/dev/null
+kill "$STUB_PID" 2>/dev/null
+wait "$STUB_PID" 2>/dev/null
+
+DICTADO="abre pregunta salio bien signo de pregunta punto y aparte entre corchetes nota"
+ESCRITO="¿salio bien?
+[nota]" # el punto de "punto y aparte" no se repite sobre el signo que cierra
+
+python3 "$ROOT/tests/stub-whisper-server.py" "$PORT" "$DICTADO" &
+STUB_PID=$!
+sleep 0.5
+sed -i 's/on_release = "paste"/on_release = "type"/' \
+	"$XDG_CONFIG_HOME/dictador/config.toml"
+
+DISPLAY="$DISPLAY_NUM" "$WORK/receiver" --editor "$WORK/escrito.txt" dictador-receiver \
+	> "$WORK/receiver2.log" 2>&1 &
+RECEIVER_PID=$!
+sleep 1
+
+DISPLAY="$DISPLAY_NUM" "$WORK/dictador" run -v > "$WORK/daemon3.log" 2>&1 &
+DAEMON_PID=$!
+sleep 2
+
+DISPLAY="$DISPLAY_NUM" xdotool keydown F9
+sleep 1.2
+DISPLAY="$DISPLAY_NUM" xdotool keyup F9
+sleep 5
+
+GOT_TYPED="$(cat "$WORK/escrito.txt" 2>/dev/null)"
+if [[ "$GOT_TYPED" == "$ESCRITO" ]]; then
+	ok "los comandos se escribieron en la ventana, con el cursor donde va"
+else
+	bad "la ventana quedó con «$GOT_TYPED», esperaba «$ESCRITO»"
+	sed 's/^/    receiver: /' "$WORK/receiver2.log"
+	sed 's/^/    daemon: /' "$WORK/daemon3.log"
+fi
+kill "$RECEIVER_PID" 2>/dev/null
+
+# Lo mismo pegando, que es lo que hace por default: un dictado con comandos deja
+# de ser un solo Ctrl+V y pasa a ser varios, con las teclas entre medio.
+kill "$DAEMON_PID" 2>/dev/null
+wait "$DAEMON_PID" 2>/dev/null
+sed -i 's/on_release = "type"/on_release = "paste"/' \
+	"$XDG_CONFIG_HOME/dictador/config.toml"
+
+DISPLAY="$DISPLAY_NUM" "$WORK/receiver" --editor "$WORK/pegado2.txt" dictador-receiver \
+	> "$WORK/receiver3.log" 2>&1 &
+RECEIVER_PID=$!
+sleep 1
+
+DISPLAY="$DISPLAY_NUM" "$WORK/dictador" run -v > "$WORK/daemon4.log" 2>&1 &
+DAEMON_PID=$!
+sleep 2
+
+DISPLAY="$DISPLAY_NUM" xdotool keydown F9
+sleep 1.2
+DISPLAY="$DISPLAY_NUM" xdotool keyup F9
+sleep 5
+
+GOT_PASTED="$(cat "$WORK/pegado2.txt" 2>/dev/null)"
+if [[ "$GOT_PASTED" == "$ESCRITO" ]]; then
+	ok "y pegando en varios tramos queda igual"
+else
+	bad "pegando quedó «$GOT_PASTED», esperaba «$ESCRITO»"
+	sed 's/^/    receiver: /' "$WORK/receiver3.log"
+	sed 's/^/    daemon: /' "$WORK/daemon4.log"
+fi
+kill "$RECEIVER_PID" 2>/dev/null
+
 if [[ "$FAILED" != "0" ]]; then
 	say ""
 	say "log del daemon:"

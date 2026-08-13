@@ -182,6 +182,10 @@ func first(set map[int]bool) int {
 	return best
 }
 
+// controlKeys son los caracteres que en el teclado son una tecla y no un
+// símbolo, y que por eso no se pueden buscar en el mapa de keysyms.
+var controlKeys = map[rune]string{'\n': "Return", '\t': "Tab", '\r': "Return"}
+
 // TypeText escribe el texto tecla por tecla.
 //
 // Para los caracteres que el teclado actual no puede producir se toma prestado
@@ -211,6 +215,18 @@ func (c *Conn) TypeText(text string, delay time.Duration) error {
 	}
 
 	for _, r := range text {
+		// El salto de línea y la tabulación no son caracteres que el teclado
+		// produzca: son teclas, y hay que buscarlas por nombre.
+		if name, ok := controlKeys[r]; ok {
+			if codes, err := keymap.KeycodesFor(name); err == nil && len(codes) > 0 {
+				_ = c.fakeKey(keyPress, codes[0])
+				_ = c.fakeKey(keyRelease, codes[0])
+				if delay > 0 {
+					time.Sleep(delay)
+				}
+				continue
+			}
+		}
 		code, needShift, ok := keymap.lookup(r)
 		if !ok {
 			if spare == 0 {

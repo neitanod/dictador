@@ -176,6 +176,24 @@
       {{end}}
     </fieldset>
 
+    <hr>
+
+    <fieldset>
+      <legend>Comandos hablados</legend>
+      <label class="engine">
+        <div class="row">
+          <input type="checkbox" id="commands" {{if .Commands}}checked{{end}}>
+          <strong>Convertir lo que decís en signos y teclas</strong>
+        </div>
+        <p class="hint">
+          "coma" escribe una coma, "abre pregunta" escribe ¿, "entre corchetes"
+          escribe [] y deja el cursor en el medio, y "borrá eso" tira lo que
+          venías dictando. Hay {{.CommandCount}}, y los ves todos con
+          <code>dictador commands</code>. Los tuyos se agregan en el config.toml.
+        </p>
+      </label>
+    </fieldset>
+
     <footer>
       <button type="submit">Guardar</button>
       <span id="message"></span>
@@ -246,6 +264,7 @@
         chrome_language: language,
         screen: document.getElementById('screen').value,
         position: document.getElementById('position').value,
+        commands: document.getElementById('commands').checked,
       }),
     });
     const body = await answer.json();

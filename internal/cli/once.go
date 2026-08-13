@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/neitanod/dictador/internal/audio"
+	"github.com/neitanod/dictador/internal/commands"
 	"github.com/neitanod/dictador/internal/stt"
 	"github.com/neitanod/dictador/internal/x11"
 )
@@ -100,6 +101,10 @@ func cmdOnce(opts *options, args []string) int {
 		o.fail(err, "TRANSCRIBE")
 		return 1
 	}
+	// Los comandos hablados valen acá también: lo que sale por stdout tiene que
+	// ser lo mismo que se pegaría dictando. Lo que no entra en un string —el
+	// cursor de "entre corchetes"— se resuelve al aplanar el plan.
+	text = commands.Compile(text, commands.OptionsFrom(cfg)).Text()
 
 	if *clipboard || *paste {
 		clip, err := x11.NewClipboard()

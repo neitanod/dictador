@@ -115,6 +115,80 @@ look as big as 19 points anywhere else on your desktop.
 dictador config set overlay.font_size 22
 ```
 
+## Punctuation and spoken commands
+
+Some things aren't dictated: they're written. Saying "abre pregunta cómo andás
+signo de pregunta" has to come out as `¿cómo andás?`, and saying "entre
+corchetes" has to leave the cursor **between** the two brackets, ready for
+whatever comes next.
+
+The commands are Spanish phrases, because that's the language this thing was
+built to dictate in — see the table below.
+
+```
+abre pregunta cómo va lo del deploy signo de pregunta punto y aparte
+   → ¿cómo va lo del deploy?
+     (and the cursor on the next line)
+
+el archivo está en config barra dictador barra config punto toml
+   → el archivo está en config/dictador/config.toml
+```
+
+`dictador commands` lists them all, and `--try` runs a phrase through them
+without touching the microphone:
+
+```bash
+dictador commands
+dictador commands --try "entre corchetes nota barra dos"
+```
+
+| what you say | what happens |
+|---|---|
+| `punto y aparte` | `.` and a new line |
+| `punto y seguido` · `coma` · `punto y coma` | `.` · `,` · `;` |
+| `abre pregunta` · `signo de pregunta` | `¿` · `?` |
+| `abre admiración` · `signo de admiración` | `¡` · `!` |
+| `entre corchetes` · `entre paréntesis` · `entre comillas` | writes the pair and leaves the cursor inside |
+| `enter` · `tab` | the actual key, not the character |
+| `guión` · `guión bajo` · `barra` · `barra invertida` | `-` · `_` · `/` · `\` |
+| `signo pesos` · `numeral` · `hashtag` · `asterisco` | `$` · `#` · `#` · `*` |
+| `signo más` · `signo igual` · `signo mayor` · `signo menor` · `ampersand` | `+` · `=` · `>` · `<` · `&` |
+| `espacio espacio` | two spaces, which in Markdown is a line break |
+| `borrar palabra` | deletes the last word you dictated |
+| `borrá eso` | deletes everything you had dictated so far |
+
+Spacing sorts itself out: the comma sticks to the word before it, the `¿` to the
+word after it, and the slash to both — which is what turns "config barra
+dictador" into a path instead of three words.
+
+**A command is a phrase you only say when you're talking about editing text.**
+That's why `signo mayor` exists and `mayor` doesn't, and `espacio espacio` does
+and `espacio` doesn't: "el alfajor Capitán del Espacio es muy rico" has to come
+out untouched. If one still gets in your way — `coma` and `barra` are everyday
+words — you can turn it off without touching code.
+
+Yours go in the config, and that's also where the built-in ones get turned off:
+
+```toml
+[commands]
+enabled = true
+
+[commands.replacements]
+"dos puntos" = ":"
+"flecha" = "→"
+"coma" = ""        # turn off a built-in one
+```
+
+Spacing for yours is inferred from the value: starting with a closing sign
+sticks it to the previous word, ending with an opening one sticks it to the
+next, and if you write the spaces yourself, yours are kept.
+
+Deletions only reach what you dictated in that same dictation. "borrá eso" said
+before saying anything does nothing: the text already in your editor wasn't
+written by the dictation, and it isn't its to delete. "borrar palabra" is the one
+exception — with nothing dictated yet it sends `Ctrl+Backspace`, which is what
+fixing the previous word needs.
+
 ## Picking an engine
 
 There are three, and switching costs no restart. The comfortable way is to
@@ -207,6 +281,7 @@ and a billed call.
 | `dictador bench` | compares the engines using your voice |
 | `dictador doctor` | checks everything is where it should be |
 | `dictador keys [filter]` | lists the keys in the current map |
+| `dictador commands [--try "phrase"]` | lists the spoken commands, or runs a phrase through them |
 | `dictador config [show\|init\|edit\|path\|set\|web]` | view or edit the configuration |
 | `dictador history [-n N]` | the last dictations |
 | `dictador service [install\|uninstall\|status]` | autostart on login |
@@ -267,6 +342,12 @@ hide_delay_ms = 1400
 [limits]
 max_seconds = 120
 min_seconds = 0.35
+
+[commands]
+enabled = true             # spoken commands: "coma", "entre corchetes"…
+
+[commands.replacements]
+# "dos puntos" = ":"       # yours; an empty value turns off a built-in one
 ```
 
 ## How it's built

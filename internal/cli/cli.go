@@ -24,6 +24,7 @@ comandos:
   bench      compara los motores con tu voz para elegir el tuyo
   doctor     chequea que todo lo necesario esté en su lugar
   keys       lista las teclas del mapa actual, para elegir el hotkey
+  commands   lista los comandos hablados (--try "hola coma qué tal" los prueba)
   config     ver o editar la configuración (show | init | edit | path | set | web)
   history    últimos dictados
   service    autostart en el login
@@ -90,6 +91,8 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return cmdDoctor(&opts, rest)
 	case "keys":
 		return cmdKeys(&opts, rest)
+	case "commands":
+		return cmdCommands(&opts, rest)
 	case "config":
 		return cmdConfig(&opts, rest)
 	case "history":

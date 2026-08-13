@@ -1,11 +1,14 @@
 package webconfig
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/neitanod/dictador/internal/config"
 	"github.com/neitanod/dictador/internal/stt"
@@ -82,4 +85,83 @@ func TestQuitSoloPorPOST(t *testing.T) {
 		t.Fatal("un GET no tiene que matar el programa")
 	default:
 	}
+}
+
+// newServer levanta el server contra un config y un HOME de mentira, para que
+// guardar escriba en un archivo del test y no en el de la máquina.
+func newServer(t *testing.T, cfg config.Config) *Server {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	server, err := New(cfg)
+	if err != nil {
+		t.Fatalf("no pude levantar el server: %v", err)
+	}
+	t.Cleanup(server.Close)
+	return server
+}
+
+func TestLaPáginaMuestraElEstadoDeLosComandos(t *testing.T) {
+	cfg := config.Defaults()
+	server := newServer(t, cfg)
+
+	body := get(t, server.URL())
+	if !strings.Contains(body, "Comandos hablados") {
+		t.Error("la página no habla de los comandos")
+	}
+	if !strings.Contains(body, `id="commands" checked`) {
+		t.Error("los comandos están prendidos y el checkbox no lo muestra")
+	}
+
+	cfg.Commands.Enabled = false
+	server.Update(cfg)
+	if body := get(t, server.URL()); strings.Contains(body, `id="commands" checked`) {
+		t.Error("los comandos están apagados y el checkbox sigue tildado")
+	}
+}
+
+func TestGuardarApagaLosComandosEnElArchivoYAvisaAlDaemon(t *testing.T) {
+	server := newServer(t, config.Defaults())
+
+	answer, err := http.Post(server.URL()+"save", "application/json",
+		strings.NewReader(`{"engine":"whisper","commands":false,
+			"screen":"mouse","position":"bottom-center"}`))
+	if err != nil {
+		t.Fatalf("no pude guardar: %v", err)
+	}
+	defer answer.Body.Close()
+	if answer.StatusCode != http.StatusOK {
+		got, _ := io.ReadAll(answer.Body)
+		t.Fatalf("guardar dio %d: %s", answer.StatusCode, got)
+	}
+
+	select {
+	case values := <-server.Saved():
+		if values.Commands {
+			t.Error("el daemon se enteró de que los comandos siguen prendidos")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("nadie avisó que se guardó")
+	}
+
+	raw, err := os.ReadFile(config.ConfigPath())
+	if err != nil {
+		t.Fatalf("no se escribió el config: %v", err)
+	}
+	if !strings.Contains(string(raw), "enabled = false") {
+		t.Errorf("el archivo no apagó los comandos:\n%s", raw)
+	}
+}
+
+func get(t *testing.T, url string) string {
+	t.Helper()
+	answer, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("no pude leer la página: %v", err)
+	}
+	defer answer.Body.Close()
+	body, err := io.ReadAll(answer.Body)
+	if err != nil {
+		t.Fatalf("no pude leer la página: %v", err)
+	}
+	return string(body)
 }

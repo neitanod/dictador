@@ -73,6 +73,17 @@ type Action struct {
 	StripFinalPeriod bool   `toml:"strip_final_period"`
 }
 
+// Commands: los comandos hablados que se vuelven signos, teclas o borrados.
+//
+// Decir "coma" escribe una coma, y decir "entre corchetes" escribe los dos y
+// deja el cursor en el medio. Los de fábrica están en internal/commands;
+// Replacements agrega los tuyos, cambia uno de fábrica, o lo apaga dejándolo
+// en "".
+type Commands struct {
+	Enabled      bool              `toml:"enabled"`
+	Replacements map[string]string `toml:"replacements"`
+}
+
 // Overlay: la ventanita que muestra lo que vas diciendo.
 type Overlay struct {
 	Enabled bool `toml:"enabled"`
@@ -96,12 +107,13 @@ type Limits struct {
 
 // Config es el config.toml entero, ya con los defaults aplicados.
 type Config struct {
-	Hotkey  Hotkey  `toml:"hotkey"`
-	Audio   Audio   `toml:"audio"`
-	STT     STT     `toml:"stt"`
-	Action  Action  `toml:"action"`
-	Overlay Overlay `toml:"overlay"`
-	Limits  Limits  `toml:"limits"`
+	Hotkey   Hotkey   `toml:"hotkey"`
+	Audio    Audio    `toml:"audio"`
+	STT      STT      `toml:"stt"`
+	Action   Action   `toml:"action"`
+	Commands Commands `toml:"commands"`
+	Overlay  Overlay  `toml:"overlay"`
+	Limits   Limits   `toml:"limits"`
 
 	// Path es el archivo del que salió, o "" si son los defaults pelados.
 	Path string `toml:"-" json:"-"`
@@ -143,6 +155,9 @@ func Defaults() Config {
 		Action: Action{
 			OnRelease:    "paste",
 			RestoreFocus: true,
+		},
+		Commands: Commands{
+			Enabled: true,
 		},
 		Overlay: Overlay{
 			Enabled:     true,

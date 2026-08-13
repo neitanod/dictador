@@ -114,6 +114,76 @@ puntos acá se ven igual de grandes que 19 puntos en el resto del escritorio.
 dictador config set overlay.font_size 22
 ```
 
+## Puntuación y comandos hablados
+
+Hay cosas que no se dictan: se escriben. Decir "abre pregunta cómo andás signo
+de pregunta" tiene que terminar en `¿cómo andás?`, y decir "entre corchetes"
+tiene que dejar el cursor **entre** los dos corchetes, listo para lo que venga.
+
+```
+abre pregunta cómo va lo del deploy signo de pregunta punto y aparte
+   → ¿cómo va lo del deploy?
+     (y el cursor en la línea de abajo)
+
+el archivo está en config barra dictador barra config punto toml
+   → el archivo está en config/dictador/config.toml
+```
+
+`dictador commands` los lista todos, y `--try` los prueba sin hablarle al
+micrófono:
+
+```bash
+dictador commands
+dictador commands --try "entre corchetes nota barra dos"
+```
+
+| lo que decís | lo que pasa |
+|---|---|
+| `punto y aparte` | `.` y salta a la línea siguiente |
+| `punto y seguido` · `coma` · `punto y coma` | `.` · `,` · `;` |
+| `abre pregunta` · `signo de pregunta` | `¿` · `?` |
+| `abre admiración` · `signo de admiración` | `¡` · `!` |
+| `entre corchetes` · `entre paréntesis` · `entre comillas` | escribe el par y deja el cursor adentro |
+| `enter` · `tab` | la tecla de verdad, no el carácter |
+| `guión` · `guión bajo` · `barra` · `barra invertida` | `-` · `_` · `/` · `\` |
+| `signo pesos` · `numeral` · `hashtag` · `asterisco` | `$` · `#` · `#` · `*` |
+| `signo más` · `signo igual` · `signo mayor` · `signo menor` · `ampersand` | `+` · `=` · `>` · `<` · `&` |
+| `espacio espacio` | dos espacios, que en Markdown es un salto de línea |
+| `borrar palabra` | borra la última palabra dictada |
+| `borrá eso` | borra todo lo que venías dictando |
+
+Los espacios se acomodan solos: la coma se pega a la palabra de atrás, el `¿` a
+la de adelante, y la barra a las dos, que es lo que hace que "config barra
+dictador" salga como una ruta y no como tres palabras.
+
+**Un comando es una frase que sólo se dice cuando estás hablando de editar
+texto.** Por eso existe `signo mayor` y no `mayor`, y `espacio espacio` y no
+`espacio`: "el alfajor Capitán del Espacio es muy rico" tiene que salir tal
+cual. Si alguno te molesta igual —`coma` y `barra` son palabras de todos los
+días— se apaga sin tocar código.
+
+Los tuyos van en el config, y ahí mismo se apagan los de fábrica:
+
+```toml
+[commands]
+enabled = true
+
+[commands.replacements]
+"dos puntos" = ":"
+"flecha" = "→"
+"coma" = ""        # apagar uno de fábrica
+```
+
+El espaciado de los tuyos se deduce del valor: si empieza con un signo de cierre
+se pega a la palabra anterior, si termina en uno de apertura a la que sigue, y
+si le ponés los espacios a mano se respetan los tuyos.
+
+Los borrados alcanzan sólo a lo que dictaste en ese mismo dictado. "borrá eso"
+dicho antes de decir nada no hace nada: el texto que ya estaba en tu editor no
+lo escribió el dictado, y no es suyo para borrarlo. "borrar palabra" es la única
+excepción — si todavía no dictaste ninguna, manda `Ctrl+Backspace`, que es lo
+que hace falta para corregir la palabra anterior.
+
 ## Elegir motor
 
 Hay tres, y se cambian sin reiniciar nada. Lo más cómodo es hacerle **click a la
@@ -204,6 +274,7 @@ red y una llamada facturada.
 | `dictador bench` | compara los motores con tu voz |
 | `dictador doctor` | chequea que todo esté en su lugar |
 | `dictador keys [filtro]` | lista las teclas del mapa actual |
+| `dictador commands [--try "frase"]` | lista los comandos hablados, o prueba una frase |
 | `dictador config [show\|init\|edit\|path\|set\|web]` | ver o editar la configuración |
 | `dictador history [-n N]` | los últimos dictados |
 | `dictador service [install\|uninstall\|status]` | autostart en el login |
@@ -265,6 +336,12 @@ hide_delay_ms = 1400
 [limits]
 max_seconds = 120
 min_seconds = 0.35
+
+[commands]
+enabled = true             # los comandos hablados: "coma", "entre corchetes"…
+
+[commands.replacements]
+# "dos puntos" = ":"       # los tuyos; un valor vacío apaga uno de fábrica
 ```
 
 ## Cómo está hecho

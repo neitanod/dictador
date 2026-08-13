@@ -20,10 +20,10 @@ package daemon
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/neitanod/dictador/internal/audio"
+	"github.com/neitanod/dictador/internal/commands"
 	"github.com/neitanod/dictador/internal/config"
 	"github.com/neitanod/dictador/internal/history"
 	"github.com/neitanod/dictador/internal/overlay"
@@ -342,6 +342,7 @@ func (d *Daemon) applySettings(values webconfig.Values) {
 	d.cfg.STT.ChromeLanguage = values.ChromeLanguage
 	d.cfg.Overlay.Screen = values.Screen
 	d.cfg.Overlay.Position = values.Position
+	d.cfg.Commands.Enabled = values.Commands
 	// Dónde aparece la ventanita se cambia sin reiniciar nada: la próxima vez
 	// que dictes ya aparece donde la mandaste.
 	if placeable, ok := d.ui.(overlay.Placeable); ok {
@@ -580,8 +581,9 @@ func (d *Daemon) onResult(res result) {
 }
 
 // deliver hace con el texto lo que diga [action].
-func (d *Daemon) deliver(text string) {
-	text = Postprocess(text, d.cfg.Action)
+func (d *Daemon) deliver(raw string) {
+	plan := Prepare(raw, d.cfg)
+	text := plan.Text()
 	if text == "" {
 		d.ui.SetDone("", "No se entendió nada", 1600*time.Millisecond)
 		return
@@ -591,7 +593,7 @@ func (d *Daemon) deliver(text string) {
 	if status == "" {
 		status = action
 	}
-	if err := d.put(text, action); err != nil {
+	if err := d.put(plan, action); err != nil {
 		_ = d.clip.Set(text) // al menos que no se pierda
 		status = fmt.Sprintf("Quedó en el clipboard (%v)", err)
 	}
@@ -607,45 +609,100 @@ func (d *Daemon) deliver(text string) {
 	d.ui.SetDone(text, status, time.Duration(d.cfg.Overlay.HideDelayMs)*time.Millisecond)
 }
 
-func (d *Daemon) put(text, action string) error {
+// put ejecuta el plan en el destino que corresponda.
+//
+// El clipboard no tiene cursor ni teclado: ahí el plan se aplana y va como
+// texto. En la ventana, en cambio, se ejecuta paso por paso, que es lo que hace
+// que "entre corchetes" deje el cursor adentro.
+func (d *Daemon) put(plan commands.Plan, action string) error {
 	switch action {
 	case "clipboard", "keep_open":
-		return d.clip.Set(text)
+		return d.clip.Set(plan.Text())
 	case "type":
 		if d.cfg.Action.RestoreFocus {
 			d.conn.Focus(d.target.Window)
 			time.Sleep(60 * time.Millisecond)
 		}
-		return d.conn.TypeText(text, 12*time.Millisecond)
+		for _, step := range plan.Steps {
+			if step.Key != "" {
+				if err := d.conn.SendCombo(step.Key); err != nil {
+					return err
+				}
+				continue
+			}
+			if err := d.conn.TypeText(step.Text, 12*time.Millisecond); err != nil {
+				return err
+			}
+		}
+		return nil
 	default:
-		if err := d.clip.Set(text); err != nil {
-			return err
-		}
-		if d.cfg.Action.RestoreFocus && d.conn.Focus(d.target.Window) {
-			// Que el WM termine de mover el foco antes del Ctrl+V.
-			time.Sleep(60 * time.Millisecond)
-		}
+		focused := false
 		combo := "ctrl+v"
 		if x11.IsTerminal(d.target.Class) {
 			combo = "ctrl+shift+v"
 		}
-		return d.conn.SendCombo(combo)
+		for i, step := range plan.Steps {
+			if step.Text != "" {
+				if err := d.clip.Set(step.Text); err != nil {
+					return err
+				}
+			}
+			if !focused {
+				if d.cfg.Action.RestoreFocus && d.conn.Focus(d.target.Window) {
+					// Que el WM termine de mover el foco antes del Ctrl+V.
+					time.Sleep(60 * time.Millisecond)
+				}
+				focused = true
+			}
+			if i > 0 {
+				// Un pegado y la tecla que le sigue no pueden salir juntos: la
+				// app de enfrente todavía está metiendo el texto anterior.
+				time.Sleep(45 * time.Millisecond)
+			}
+			key := step.Key
+			if key == "" {
+				key = combo
+			}
+			if err := d.conn.SendCombo(key); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 }
 
-// Postprocess limpia el texto antes de entregarlo.
+// Prepare arma el plan del dictado: comandos hablados primero, retoques finales
+// después.
+func Prepare(text string, cfg config.Config) commands.Plan {
+	plan := commands.Compile(text, commands.OptionsFrom(cfg))
+	if plan.Empty() {
+		return plan
+	}
+	if cfg.Action.StripFinalPeriod {
+		plan.StripFinalPeriod()
+	}
+	if cfg.Action.TrailingSpace {
+		plan.AppendText(" ")
+	}
+	return plan
+}
+
+// Postprocess limpia el texto antes de entregarlo, sin ejecutar comandos.
+//
+// Es lo que usa `dictador once`, que escribe en stdout y no tiene dónde mandar
+// una tecla.
 func Postprocess(text string, action config.Action) string {
-	text = strings.Join(strings.Fields(text), " ")
-	if text == "" {
+	plan := commands.Compile(text, commands.Options{})
+	if plan.Empty() {
 		return ""
 	}
-	if action.StripFinalPeriod && strings.HasSuffix(text, ".") {
-		text = strings.TrimSuffix(text, ".")
+	if action.StripFinalPeriod {
+		plan.StripFinalPeriod()
 	}
 	if action.TrailingSpace {
-		text += " "
+		plan.AppendText(" ")
 	}
-	return text
+	return plan.Text()
 }
 
 func (d *Daemon) showError(message string) {

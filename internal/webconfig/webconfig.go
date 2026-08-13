@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/neitanod/dictador/internal/commands"
 	"github.com/neitanod/dictador/internal/config"
 	"github.com/neitanod/dictador/internal/overlay"
 	"github.com/neitanod/dictador/internal/stt"
@@ -37,6 +38,7 @@ type Values struct {
 	ChromeLanguage string `json:"chrome_language"`
 	Screen         string `json:"screen"`
 	Position       string `json:"position"`
+	Commands       bool   `json:"commands"`
 }
 
 // Server sirve la página y avisa cuando se guarda.
@@ -170,6 +172,8 @@ type view struct {
 	Screens        []option
 	Positions      []option
 	Monitors       []x11.Monitor
+	Commands       bool
+	CommandCount   int
 }
 
 func (s *Server) snapshot() view {
@@ -194,6 +198,8 @@ func (s *Server) snapshot() view {
 		ConfigPath:  cfg.Path,
 		WhisperCommand: "whisper-server -m models/ggml-" + orElse(cfg.STT.Model, "small") +
 			".bin --host 127.0.0.1 --port 8080",
+		Commands:     cfg.Commands.Enabled,
+		CommandCount: len(commands.List(commands.OptionsFrom(cfg))),
 	}
 	if whisperOK {
 		v.WhisperDetail = "hay un whisper-server contestando en " + cfg.STT.WhisperServerURL
@@ -339,6 +345,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		{Section: "stt", Key: "chrome_language", Value: locale},
 		{Section: "overlay", Key: "screen", Value: screen},
 		{Section: "overlay", Key: "position", Value: position},
+		{Section: "commands", Key: "enabled", Value: values.Commands},
 	}
 	if !s.snapshot().KeyFromEnv {
 		settings = append(settings,
@@ -359,6 +366,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	cfg.STT.ChromeLanguage = locale
 	cfg.Overlay.Screen = screen
 	cfg.Overlay.Position = position
+	cfg.Commands.Enabled = values.Commands
 	if !s.snapshot().KeyFromEnv {
 		cfg.STT.GoogleAPIKey = strings.TrimSpace(values.GoogleAPIKey)
 	}
@@ -374,6 +382,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		ChromeLanguage: locale,
 		Screen:         screen,
 		Position:       position,
+		Commands:       values.Commands,
 	}
 	select {
 	case s.saved <- out:
