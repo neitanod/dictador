@@ -38,6 +38,7 @@ test:
 
 e2e:
 	bash tests/e2e.sh
+	bash tests/traduccion.sh
 
 fmt:
 	gofmt -w .

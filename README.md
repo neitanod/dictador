@@ -619,6 +619,12 @@ transcribes against a fake engine, and verifies the text reaches the clipboard
 It's the only way to know the hotkey, the focus and the paste still work
 together.
 
+Last on the list is the one for the letter that picks the language: it dictates
+while holding `e`, checks the dictation comes out marked for translation, and —
+what matters most — that the `e` never reached the window in front. Then it
+repeats it with translation off, where the letter does have to arrive: without
+that second half, the first one could be passing for any reason at all.
+
 ## Limitations
 
 **X11 only.** On Wayland no app can watch the global keyboard or type into

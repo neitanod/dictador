@@ -611,6 +611,12 @@ el texto llegue al portapapeles **y** que el Ctrl+V sintético lo deposite en un
 ventana que espera el pegado. Es la única forma de saber que el hotkey, el foco
 y el pegado siguen funcionando juntos.
 
+El último de la lista es el de la letra que elige el idioma: dicta manteniendo
+la `e`, verifica que el dictado salga marcado para traducir, y —lo que más
+importa— que esa `e` **no** haya llegado a la ventana de adelante. Después
+repite lo mismo con la traducción apagada, donde la letra sí tiene que llegar:
+sin esa segunda mitad, la primera podría estar pasando por cualquier motivo.
+
 ## Limitaciones
 
 **X11 solamente.** En Wayland ninguna app puede escuchar el teclado global ni

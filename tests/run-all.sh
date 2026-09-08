@@ -60,6 +60,19 @@ case "$?" in
 	;;
 esac
 
+# La letra que elige el idioma necesita además un Chrome, que es el único motor
+# que traduce.
+printf '\n\033[1m== la letra del idioma sobre Xvfb\033[0m\n'
+bash "$ROOT/tests/traduccion.sh"
+case "$?" in
+0) printf '\033[32mok\033[0m\n' ;;
+77) printf '\033[33msalteado (falta Xvfb, xdotool o Chrome)\033[0m\n' ;;
+*)
+	printf '\033[31mfalló\033[0m\n'
+	FAILED=1
+	;;
+esac
+
 printf '\n'
 if [[ "$FAILED" == "0" ]]; then
 	printf '\033[32mtodo verde\033[0m\n'
