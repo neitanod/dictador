@@ -5,9 +5,11 @@
 // ------------------
 //
 //	idle ──press──▶ armed ──(pasó el umbral)──▶ recording ──release──▶ thinking ──▶ idle
-//	                  │                            │
-//	                  └── otra tecla / release  ────┴── audio muy corto
-//	                      antes del umbral              → cancelado
+//	                  │                            │                       │
+//	                  └── otra tecla / release  ────┴── audio muy corto     └── si hubo
+//	                      antes del umbral              → cancelado             traducción
+//	                                                                            ▼
+//	                                                       idle ◀──(pega o Esc)── previewing
 //
 // `armed` existe para que la tecla siga sirviendo como modificador: recién a los
 // ~180 ms de mantenerla asumimos que querés dictar. El micrófono igual arranca
@@ -20,6 +22,7 @@ package daemon
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/neitanod/dictador/internal/audio"
@@ -28,6 +31,7 @@ import (
 	"github.com/neitanod/dictador/internal/history"
 	"github.com/neitanod/dictador/internal/overlay"
 	"github.com/neitanod/dictador/internal/stt"
+	"github.com/neitanod/dictador/internal/translate"
 	"github.com/neitanod/dictador/internal/webconfig"
 	"github.com/neitanod/dictador/internal/x11"
 )
@@ -47,6 +51,7 @@ const (
 	armed
 	recording
 	thinking
+	previewing
 )
 
 func (s state) String() string {
@@ -57,6 +62,8 @@ func (s state) String() string {
 		return "recording"
 	case thinking:
 		return "thinking"
+	case previewing:
+		return "previewing"
 	default:
 		return "idle"
 	}
@@ -68,6 +75,16 @@ type result struct {
 	err     error
 	gen     int
 	partial bool
+	// stage es un aviso de que el worker sigue trabajando y pasó a otra cosa
+	// ("translating"), para que la ventanita lo diga sin esperar al final.
+	stage string
+	// language es el idioma al que se tradujo, vacío si el texto va como se
+	// dijo. from es de dónde venía, según lo que detectó el traductor.
+	language string
+	from     string
+	// warn es un problema que no impide entregar el dictado: la traducción que
+	// no salió, con el texto original listo para pegar igual.
+	warn string
 }
 
 // Daemon es la app corriendo.
@@ -81,7 +98,7 @@ type Daemon struct {
 	engErr   string
 	listener *x11.Listener
 	conn     *x11.Conn
-	clip     *x11.Clipboard
+	clip     clipboard
 	ui       overlay.UI
 	web      *webconfig.Server
 
@@ -101,8 +118,36 @@ type Daemon struct {
 	watcher       *config.Watcher
 	reloadPending bool
 
+	// La pausa antes de pegar un dictado traducido: el plan espera acá mientras
+	// lo leés, y Escape lo tira.
+	previewTimer *time.Timer
+	pending      *preview
+
 	results chan result
 	quit    chan struct{}
+
+	// put ejecuta el plan en la ventana de destino. Es un campo y no un método
+	// a secas para que las pruebas puedan mirar lo que se iba a pegar sin un
+	// servidor X: lo que se prueba es la decisión, y el viaje a X ya está
+	// probado del otro lado.
+	put func(plan commands.Plan, action string) error
+}
+
+// clipboard es lo único que el daemon le pide al clipboard de X.
+//
+// Es una interfaz y no el tipo concreto para poder probar la pausa de la
+// traducción —donde el texto cancelado termina en el clipboard— sin un
+// servidor X de por medio.
+type clipboard interface {
+	Set(text string) error
+	Close()
+}
+
+// preview es un dictado traducido esperando el visto bueno.
+type preview struct {
+	plan     commands.Plan
+	action   string
+	language string
 }
 
 // New arma el daemon: abre X, valida la tecla y prepara el motor.
@@ -114,6 +159,7 @@ func New(cfg config.Config, verbose bool) (*Daemon, error) {
 		quit:    make(chan struct{}),
 		ui:      overlay.Nop{},
 	}
+	d.put = d.paste
 	d.log = func(msg string) {
 		if d.verbose {
 			fmt.Printf("[dictador] %s\n", msg)
@@ -166,7 +212,42 @@ func New(cfg config.Config, verbose bool) (*Daemon, error) {
 	stt.SweepOrphanChromes(d.log)
 
 	d.buildEngine()
+	d.watchLanguageKeys()
 	return d, nil
+}
+
+// watchLanguageKeys le pasa al listener las letras que eligen idioma, o
+// ninguna si en esta configuración la traducción no corre.
+//
+// Con el motor equivocado se apagan a propósito: dejarlas escuchando haría que
+// la "e" se sintiera distinta mientras dictás, para después pegar el texto en
+// castellano igual.
+func (d *Daemon) watchLanguageKeys() {
+	if d.listener == nil {
+		return
+	}
+	if !d.translationEnabled() {
+		d.listener.WatchLanguages(nil)
+		return
+	}
+	for _, err := range d.listener.WatchLanguages(d.cfg.Translate.Keys) {
+		d.log(err.Error())
+	}
+}
+
+// ungrabLanguageKeys suelta las letras de idioma, si es que se agarraron.
+func (d *Daemon) ungrabLanguageKeys() {
+	if d.listener != nil {
+		d.listener.UngrabLanguageKeys()
+	}
+}
+
+// translationEnabled dice si este dictado se puede traducir: hace falta que
+// esté prendida, que haya letras configuradas y que el motor sepa hacerlo.
+func (d *Daemon) translationEnabled() bool {
+	return d.cfg.Translate.Enabled &&
+		len(d.cfg.Translate.Keys) > 0 &&
+		d.engine != nil && stt.CanTranslate(d.engine)
 }
 
 // pickUI elige la ventanita: la dibujada si esta sesión la banca, y si no la
@@ -277,7 +358,15 @@ func (d *Daemon) Run() error {
 					armTimer = nil
 					d.cancel("")
 				}
+			case x11.Cancel:
+				armTimer = nil
+				d.onEscape()
 			}
+
+		case hint := <-d.listener.Hints():
+			// Apretaste (o soltaste) una letra de idioma mientras hablás: la
+			// ventanita lo dice ahora, así no dictás a ciegas.
+			d.showLanguageHint(hint)
 
 		case <-armTimer:
 			armTimer = nil
@@ -288,6 +377,10 @@ func (d *Daemon) Run() error {
 
 		case <-d.partialTicker.C:
 			d.requestPartial()
+
+		case <-timerC(d.previewTimer):
+			// Se acabó el tiempo de arrepentirse: va como está.
+			d.commitPreview()
 
 		case <-clicks:
 			d.openSettings()
@@ -313,6 +406,39 @@ func (d *Daemon) Run() error {
 		case res := <-d.results:
 			d.onResult(res)
 		}
+	}
+}
+
+// timerC deja al select ignorar un timer que no existe: un canal nil no se
+// elige nunca.
+func timerC(t *time.Timer) <-chan time.Time {
+	if t == nil {
+		return nil
+	}
+	return t.C
+}
+
+// showLanguageHint escribe en la ventanita a qué idioma se va a traducir.
+func (d *Daemon) showLanguageHint(hint x11.LanguageKey) {
+	if d.state != recording {
+		return
+	}
+	if hint.Language == "" {
+		d.ui.SetHint("Escuchando…")
+		return
+	}
+	// Sin flecha: la fuente del overlay no tiene el glifo y se dibuja un
+	// cuadrado, que es peor que no decir nada.
+	d.ui.SetHint("Escuchando · sale en " + strings.ToLower(translate.Name(hint.Language)))
+}
+
+// onEscape es la tecla de arrepentirse.
+func (d *Daemon) onEscape() {
+	switch d.state {
+	case previewing:
+		d.dropPreview()
+	case armed, recording:
+		d.cancel("Cancelado")
 	}
 }
 
@@ -372,6 +498,8 @@ func (d *Daemon) applySettings(values webconfig.Values) {
 	d.cfg.Commands.Enabled = values.Commands
 	d.cfg.Commands.Replacements = values.Replacements
 	d.cfg.Action.TrailingSpace = values.TrailingSpace
+	d.cfg.Translate.Enabled = values.Translate
+	d.cfg.Translate.Keys = values.TranslateKeys
 	// Dónde aparece la ventanita se cambia sin reiniciar nada: la próxima vez
 	// que dictes ya aparece donde la mandaste.
 	if placeable, ok := d.ui.(overlay.Placeable); ok {
@@ -379,9 +507,13 @@ func (d *Daemon) applySettings(values webconfig.Values) {
 	}
 	d.modelReady = false
 	if !d.buildEngine() {
+		d.watchLanguageKeys()
 		d.showError(d.engErr)
 		return
 	}
+	// Las letras de idioma dependen del motor que quedó: con uno que no traduce
+	// se apagan solas.
+	d.watchLanguageKeys()
 	if d.web != nil {
 		d.web.Update(d.cfg)
 	}
@@ -397,7 +529,18 @@ func (d *Daemon) onPress() bool {
 		d.finish()
 		return false
 	}
+	// Volver a apretar la tecla con una traducción esperando el visto bueno es
+	// darlo por bueno: se pega y arranca el dictado siguiente sin esperar.
+	if d.state == previewing {
+		d.commitPreview()
+	}
 	if d.state != idle {
+		return false
+	}
+	// Sin conexión a X ni grabador no hay dictado que empezar. En la vida real
+	// no pasa —New falla antes—; en las pruebas del pegado sí, y ahí lo que
+	// importa ya ocurrió arriba.
+	if d.conn == nil || d.recorder == nil {
 		return false
 	}
 	// El destino se guarda ANTES de grabar: cuando el dictado termina el foco
@@ -442,6 +585,14 @@ func (d *Daemon) startRecording() {
 		hint = "Escuchando (cargando modelo)…"
 	}
 	d.ui.BeginListening(hint)
+
+	// Las letras de idioma se agarran mientras dura la grabación: elegir el
+	// idioma no tiene que escribir la letra en la app de atrás.
+	if d.translationEnabled() && d.listener != nil {
+		if err := d.listener.GrabLanguageKeys(); err != nil {
+			d.log("no pude agarrar las teclas de idioma: " + err.Error())
+		}
+	}
 
 	// Los motores vivos escuchan el micrófono ellos mismos: hay que avisarles
 	// que arrancó el dictado, no pasarles el audio después.
@@ -531,6 +682,7 @@ func Preview(text string, cfg config.Config) string {
 
 func (d *Daemon) cancel(message string) {
 	d.stopPartial()
+	d.ungrabLanguageKeys()
 	d.generation++
 	if d.recorder.Running() {
 		d.recorder.Stop()
@@ -555,6 +707,14 @@ func (d *Daemon) cancel(message string) {
 
 func (d *Daemon) finish() {
 	d.stopPartial()
+	d.ungrabLanguageKeys()
+	// El idioma se decidió en el instante en que soltaste, y el listener lo
+	// congeló ahí: preguntarlo ahora daría lo que esté apretado un rato
+	// después, que ya es otra cosa.
+	language := ""
+	if d.translationEnabled() && d.listener != nil {
+		language = d.listener.ReleaseLanguage().Language
+	}
 	samples := d.recorder.Stop()
 	seconds := float64(len(samples)) / float64(d.recorder.SampleRate())
 	micError := d.recorder.Error()
@@ -573,6 +733,9 @@ func (d *Daemon) finish() {
 	d.generation++
 	gen := d.generation
 	d.ui.SetThinking(fmt.Sprintf("Transcribiendo %.1fs…", seconds))
+	if language != "" {
+		d.log("va traducido a " + language)
+	}
 
 	engine := d.engine
 	if engine == nil {
@@ -580,20 +743,63 @@ func (d *Daemon) finish() {
 		return
 	}
 	ready := d.modelReady
+	cfg := d.cfg
 	go func() {
-		started := time.Now()
-		if !ready {
-			if err := engine.Load(); err != nil {
-				d.results <- result{err: err, gen: gen}
-				return
-			}
+		for _, res := range dictate(engine, samples, ready, language, cfg, d.log) {
+			res.gen = gen
+			d.results <- res
 		}
-		text, err := engine.Transcribe(samples, false)
-		if err == nil {
-			d.log(fmt.Sprintf("transcripción final en %.2fs", time.Since(started).Seconds()))
-		}
-		d.results <- result{text: text, err: err, gen: gen}
 	}()
+}
+
+// dictate es el trabajo del worker: transcribir, y si el dictado va traducido,
+// traducir. Devuelve lo que hay que contarle al daemon, en orden.
+//
+// Está afuera del daemon para poder probar la regla que decide el resultado sin
+// micrófono ni servidor X: los comandos hablados corren antes de traducir.
+func dictate(engine stt.Engine, samples []float32, ready bool, language string,
+	cfg config.Config, log func(string)) []result {
+	started := time.Now()
+	if !ready {
+		if err := engine.Load(); err != nil {
+			return []result{{err: err}}
+		}
+	}
+	text, err := engine.Transcribe(samples, false)
+	if err != nil {
+		return []result{{err: err}}
+	}
+	log(fmt.Sprintf("transcripción final en %.2fs", time.Since(started).Seconds()))
+	if language == "" {
+		return []result{{text: text}}
+	}
+	// Los comandos hablados se aplican ANTES de traducir: se dicen en
+	// castellano, y mandarle "coma" al traductor devuelve la palabra "comma" en
+	// vez del signo.
+	spoken := commands.Compile(text, commands.OptionsFrom(cfg)).Text()
+	if strings.TrimSpace(spoken) == "" {
+		return []result{{text: text}}
+	}
+	avisos := []result{{stage: "translating", language: language}}
+	translated, err := translateText(engine, spoken, language)
+	if err != nil {
+		// Un traductor que no contesta no puede costarte el dictado: va el
+		// original, con el aviso de por qué.
+		log("la traducción falló: " + err.Error())
+		return append(avisos, result{text: text, warn: "sin traducir: " + reason(err)})
+	}
+	return append(avisos, result{
+		text: translated.Text, language: language, from: translated.From,
+	})
+}
+
+// translateText traduce con el motor, si es de los que saben.
+func translateText(engine stt.Engine, text, language string) (stt.Translation, error) {
+	translator, ok := engine.(stt.Translator)
+	if !ok {
+		return stt.Translation{}, fmt.Errorf("el motor %s no traduce", engine.Name())
+	}
+	return translator.Translate(text, language)
 }
 
 func (d *Daemon) onResult(res result) {
@@ -606,6 +812,12 @@ func (d *Daemon) onResult(res result) {
 			return
 		}
 		d.log(fmt.Sprintf("listo para dictar — %s, listo en %s", d.EngineLine(), res.text))
+		return
+	}
+	if res.stage == "translating" {
+		if res.gen == d.generation && d.state == thinking {
+			d.ui.SetThinking("Traduciendo al " + translate.Name(res.language) + "…")
+		}
 		return
 	}
 	if res.partial {
@@ -626,25 +838,39 @@ func (d *Daemon) onResult(res result) {
 		return
 	}
 	d.modelReady = true
-	d.deliver(res.text)
+	d.deliver(res)
 }
 
 // deliver hace con el texto lo que diga [action].
-func (d *Daemon) deliver(raw string) {
-	plan := Prepare(raw, d.cfg)
-	text := plan.Text()
-	if text == "" {
+func (d *Daemon) deliver(res result) {
+	plan := Prepare(res.text, d.cfg)
+	if res.language != "" {
+		plan = PrepareTranslated(res.text, d.cfg)
+	}
+	if plan.Text() == "" {
 		d.ui.SetDone("", "No se entendió nada", 1600*time.Millisecond)
 		return
 	}
 	action := d.cfg.Action.OnRelease
-	status := actionLabels[action]
-	if status == "" {
-		status = action
+	// La pausa para arrepentirse es sólo del dictado traducido, y sólo cuando
+	// el texto va a salir disparado a otra ventana: lo que queda en el
+	// clipboard no se pega en ningún lado y no hay nada que frenar.
+	if res.language != "" && d.previewDelay() > 0 && action != "clipboard" && action != "keep_open" {
+		d.startPreview(plan, action, res.language)
+		return
 	}
+	d.apply(plan, action, res.language, res.warn)
+}
+
+// apply ejecuta el plan en el destino y cuenta cómo salió.
+func (d *Daemon) apply(plan commands.Plan, action, language, warn string) {
+	text := plan.Text()
+	status := statusFor(action, language)
 	if err := d.put(plan, action); err != nil {
 		_ = d.clip.Set(text) // al menos que no se pierda
 		status = fmt.Sprintf("Quedó en el clipboard (%v)", err)
+	} else if warn != "" {
+		status += " · " + warn
 	}
 	if err := history.Append(history.Entry{
 		Text: text, Action: action, Target: d.target.Class,
@@ -658,12 +884,120 @@ func (d *Daemon) deliver(raw string) {
 	d.ui.SetDone(text, status, time.Duration(d.cfg.Overlay.HideDelayMs)*time.Millisecond)
 }
 
-// put ejecuta el plan en el destino que corresponda.
+// statusFor es lo que dice la ventanita cuando el texto ya salió.
+func statusFor(action, language string) string {
+	status := actionLabels[action]
+	if status == "" {
+		status = action
+	}
+	if language != "" {
+		status += " en " + strings.ToLower(translate.Name(language))
+	}
+	return status
+}
+
+// ---- la pausa antes de pegar una traducción ------------------------------
+
+// previewDelay es cuánto se muestra la traducción antes de pegarla.
+func (d *Daemon) previewDelay() time.Duration {
+	ms := d.cfg.Translate.PreviewMs
+	if ms < 0 {
+		ms = 0
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
+// startPreview muestra el texto ya traducido y espera un momento antes de
+// pegarlo.
+//
+// Es el segundo que pediste para leerlo: una traducción puede salir torcida, y
+// darse cuenta después de que se pegó en el chat es tarde. Escape lo tira.
+func (d *Daemon) startPreview(plan commands.Plan, action, language string) {
+	d.pending = &preview{plan: plan, action: action, language: language}
+	d.state = previewing
+	// Escape es nuestro mientras dura la pausa, así cancelar el pegado no le
+	// cierra además el diálogo a la ventana de adelante.
+	if d.listener != nil {
+		if err := d.listener.GrabCancelKey(); err != nil {
+			d.log("no pude agarrar Escape: " + err.Error())
+		}
+	}
+	delay := d.previewDelay()
+	d.ui.SetDone(plan.Text(), fmt.Sprintf("%s · se pega en %s · Esc cancela",
+		translate.Name(language), formatDelay(delay)), 0)
+	if d.previewTimer != nil {
+		d.previewTimer.Stop()
+	}
+	d.previewTimer = time.NewTimer(delay)
+}
+
+// commitPreview pega lo que estaba esperando.
+func (d *Daemon) commitPreview() {
+	pending := d.endPreview()
+	if pending == nil {
+		return
+	}
+	d.apply(pending.plan, pending.action, pending.language, "")
+}
+
+// dropPreview tira el pegado y deja el texto en el clipboard.
+//
+// Que quede en el clipboard es lo que hace barata la cancelación: si te
+// arrepentiste del pegado pero la traducción te servía, la tenés a un Ctrl+V.
+func (d *Daemon) dropPreview() {
+	pending := d.endPreview()
+	if pending == nil {
+		return
+	}
+	text := pending.plan.Text()
+	status := "Cancelado — te lo dejo en el clipboard"
+	if err := d.clip.Set(text); err != nil {
+		status = "Cancelado"
+	}
+	d.log("pegado cancelado con Escape")
+	d.ui.SetDone(text, status, 2200*time.Millisecond)
+}
+
+// endPreview cierra la pausa y devuelve lo que estaba esperando.
+func (d *Daemon) endPreview() *preview {
+	if d.previewTimer != nil {
+		d.previewTimer.Stop()
+		d.previewTimer = nil
+	}
+	pending := d.pending
+	d.pending = nil
+	if d.state == previewing {
+		d.state = idle
+	}
+	if d.listener != nil {
+		d.listener.UngrabCancelKey()
+	}
+	return pending
+}
+
+// formatDelay escribe la espera como se lee: "1 s", "1,2 s".
+func formatDelay(delay time.Duration) string {
+	seconds := delay.Seconds()
+	if seconds == float64(int(seconds)) {
+		return fmt.Sprintf("%d s", int(seconds))
+	}
+	return strings.Replace(fmt.Sprintf("%.1f s", seconds), ".", ",", 1)
+}
+
+// reason es el mensaje de un error, para meterlo en una línea de estado.
+func reason(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+// paste ejecuta el plan en el destino que corresponda.
 //
 // El clipboard no tiene cursor ni teclado: ahí el plan se aplana y va como
 // texto. En la ventana, en cambio, se ejecuta paso por paso, que es lo que hace
 // que "entre corchetes" deje el cursor adentro.
-func (d *Daemon) put(plan commands.Plan, action string) error {
+func (d *Daemon) paste(plan commands.Plan, action string) error {
 	switch action {
 	case "clipboard", "keep_open":
 		return d.clip.Set(plan.Text())
@@ -736,6 +1070,27 @@ func Prepare(text string, cfg config.Config) commands.Plan {
 	return plan
 }
 
+// PrepareTranslated arma el plan de un dictado que ya pasó por el traductor.
+//
+// Los comandos hablados no se vuelven a aplicar: se ejecutaron antes de
+// traducir, y correrlos sobre el texto en inglés convertiría un "coma" que
+// ahora dice "comma" en un signo que nadie pidió. Lo que queda es texto plano
+// con los retoques de entrega.
+func PrepareTranslated(text string, cfg config.Config) commands.Plan {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return commands.Plan{}
+	}
+	plan := commands.Plan{Steps: []commands.Step{{Text: text}}}
+	if cfg.Action.StripFinalPeriod {
+		plan.StripFinalPeriod()
+	}
+	if cfg.Action.TrailingSpace {
+		plan.AppendText(" ")
+	}
+	return plan
+}
+
 // Postprocess limpia el texto antes de entregarlo, sin ejecutar comandos.
 //
 // Es lo que usa `dictador once`, que escribe en stdout y no tiene dónde mandar
@@ -765,6 +1120,13 @@ func (d *Daemon) Stop() {
 	case <-d.quit:
 	default:
 		close(d.quit)
+	}
+	// Los grabs se sueltan antes de cerrar la conexión: X los libera solo al
+	// cerrarla, y soltarlos acá deja el teclado limpio también cuando el
+	// listener sigue vivo un rato más.
+	d.ungrabLanguageKeys()
+	if d.listener != nil {
+		d.listener.UngrabCancelKey()
 	}
 	d.listener.Stop()
 	if d.watcher != nil {

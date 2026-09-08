@@ -250,6 +250,21 @@ func (w *Window) SetPartial(text string) {
 	w.show()
 }
 
+// SetHint cambia la etiqueta del cuadro que ya está en pantalla.
+//
+// A diferencia de BeginListening, no reinicia nada: el texto que venías
+// diciendo y el nivel del micrófono se quedan como están, y sólo cambia lo que
+// dice arriba.
+func (w *Window) SetHint(hint string) {
+	if hint == "" {
+		return
+	}
+	w.mu.Lock()
+	w.current.label = hint
+	w.mu.Unlock()
+	w.show()
+}
+
 func (w *Window) SetMeter(level, elapsed float64) {
 	w.mu.Lock()
 	listening := w.current.state == "listening"

@@ -3,7 +3,8 @@
 # dictador
 
 Global push-to-talk dictation for Linux/X11, in Go. Hold a key, talk, let go, and
-the text lands wherever your cursor was.
+the text lands wherever your cursor was. And if you were holding `e` when you let
+go, it lands in English.
 
 This is the Go rewrite of [dictado](https://github.com/neitanod/dictado), which
 is in Python and works. What changes here: a single binary with no venv, no GUI
@@ -266,6 +267,103 @@ written by the dictation, and it isn't its to delete. "borrar palabra" is the on
 exception — with nothing dictated yet it sends `Ctrl+Backspace`, which is what
 fixing the previous word needs.
 
+## Instant translation
+
+While you talk, hold down a letter and release it together with the dictation
+key: what you said gets pasted translated. `e` makes it English and `p` makes it
+Portuguese, and you pick both the letters and the languages.
+
+```
+AltGr+Control_R  ────────────────────────────────▶ pasted in Spanish
+AltGr+Control_R + e (held on release)  ──────────▶ pasted in English
+AltGr+Control_R + p (held on release)  ──────────▶ pasted in Portuguese
+```
+
+**What decides is whatever you are holding the instant you let go.** You can
+start talking without having decided anything and press the letter near the end;
+change your mind mid-sentence and let it go, and the text comes out as you said
+it. If you tried two, the last one wins. While you dictate, the overlay shows
+where it is headed — "Escuchando · sale en inglés" — so it is never blind.
+
+![The overlay while dictating to translate](docs/overlay-traduciendo.png)
+
+Letting go of everything is a single hand movement and fingers do not lift in
+sync, so a letter released up to 300 ms early still counts.
+
+**The letter is not typed anywhere.** While recording, those keys are held by a
+X grab: they never reach the app in front, and they never fire its shortcut —
+`Ctrl+E` in a browser opens the search bar. Outside dictation they are ordinary
+keys again.
+
+### The second to change your mind
+
+A translation can come out wrong, and noticing after it landed in the chat is
+too late. So the translated text is shown in the overlay for a moment before
+being pasted:
+
+- **`Esc`** cancels the paste and leaves the translation in the clipboard, in
+  case you wanted it anyway.
+- **The dictation key** approves it and pastes it right away.
+- Do nothing and it pastes itself when the time runs out.
+
+![The second to cancel the paste](docs/overlay-antes-de-pegar.png)
+
+That moment is `translate.preview_ms`, 1200 by default; `0` pastes straight
+through. Dictation that was not translated pastes immediately, as always.
+
+### What translates it
+
+Google Translate does, from the same Chrome that is listening to you: the page
+running speech recognition asks for the translation from the endpoint the
+browser's own translator uses. **No API key and no bill**, same as the
+dictation.
+
+Hence the one restriction: **it only works with `engine = "chrome"`**. Whisper
+transcribes locally and has nothing to translate with, and with Google Cloud
+every call is billed — putting a paid service under a key is an expensive
+surprise. With those two engines the section shows up disabled in the settings
+and the letters do nothing.
+
+The source language is detected automatically, so dictating in English and
+asking for Portuguese works too, without touching the recognition language.
+
+**Spoken commands run before translating.** They are spoken in Spanish, and
+sending "coma" to the translator would return the word *comma* spelled out
+instead of the sign.
+
+**If the translator does not answer**, what you said gets pasted with a note
+next to it. Dictation is never lost because of the translation.
+
+### Picking letters and languages
+
+The settings screen has a table: a letter on the left, the language on the
+right, and *Agregar un idioma* to add more.
+
+![The language table in the settings screen](docs/config-traduccion.png)
+
+Or in the file:
+
+```toml
+[translate]
+enabled = true
+preview_ms = 1200          # how long it shows before pasting
+timeout_s = 10             # if the translator takes longer, your words go in
+
+[translate.keys]
+e = "en"
+p = "pt"
+f = "fr"
+j = "ja"
+```
+
+Codes are Google Translate's: `en`, `pt`, `fr`, `it`, `de`, `ja`, `zh-CN`… The
+settings screen offers 31, and any missing one written here by hand works just
+the same.
+
+`dictador doctor` tells you how it ended up: which language each letter points
+to, whether your engine can translate, and whether some letter is missing from
+your keyboard.
+
 ## Picking an engine
 
 There are three, and switching costs no restart. The comfortable way is to
@@ -440,6 +538,15 @@ enabled = true             # spoken commands: "coma", "entre corchetes"…
 
 [commands.replacements]
 # "dos puntos" = ":"       # yours; an empty value turns off a built-in one
+
+[translate]
+enabled = true             # translate based on the letter you are holding
+preview_ms = 1200          # the moment to read it and cancel with Esc
+timeout_s = 10
+
+[translate.keys]
+e = "en"                   # the letter you hold → the language it goes to
+p = "pt"
 ```
 
 ## How it's built

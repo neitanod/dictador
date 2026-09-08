@@ -44,6 +44,18 @@ func (n *Notify) BeginListening(hint string) {
 	n.show(hint, "", 30*time.Second, "audio-input-microphone")
 }
 
+// SetHint reemplaza el título de la notificación que está en pantalla,
+// dejando abajo lo último que se entendió.
+func (n *Notify) SetHint(hint string) {
+	if hint == "" {
+		return
+	}
+	n.mu.Lock()
+	text := n.lastText
+	n.mu.Unlock()
+	n.show(hint, text, 30*time.Second, "audio-input-microphone")
+}
+
 func (n *Notify) SetPartial(text string) {
 	if text == "" {
 		return

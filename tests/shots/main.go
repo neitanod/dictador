@@ -74,6 +74,18 @@ func main() {
 	shot("04-resultado", func() {
 		window.SetDone("esto es lo que se va entendiendo mientras hablás", "Pegado", 0)
 	})
+	// La traducción instantánea tiene dos cuadros propios: el que dice a dónde
+	// va mientras hablás, y el que te da el segundo para cancelar el pegado.
+	shot("06-traduciendo", func() {
+		window.BeginListening("Escuchando…")
+		window.SetPartial("¿cómo va lo del deploy? te escribo cuando llegue")
+		window.SetMeter(0.62, 3.7)
+		window.SetHint("Escuchando · sale en inglés")
+	})
+	shot("07-antes-de-pegar", func() {
+		window.SetDone("How's the deploy going? I'll write to you when I get there",
+			"Inglés · se pega en 1,2 s · Esc cancela", 0)
+	})
 	shot("05-error", func() {
 		window.SetError("Chrome no pudo hablar con el servicio de voz de Google (¿hay internet?)")
 	})

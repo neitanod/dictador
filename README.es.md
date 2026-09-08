@@ -3,7 +3,8 @@
 # dictador
 
 Dictado por voz global para Linux/X11, en Go. Mantené una tecla, hablá, soltala,
-y el texto aparece donde tenías el cursor.
+y el texto aparece donde tenías el cursor. Y si al soltar tenías apretada la
+`e`, aparece en inglés.
 
 Es la reimplementación en Go de [dictado](https://github.com/neitanod/dictado),
 que está en Python y anda. Lo que cambia acá: un binario sin venv, sin toolkit
@@ -258,6 +259,102 @@ lo escribió el dictado, y no es suyo para borrarlo. "borrar palabra" es la úni
 excepción — si todavía no dictaste ninguna, manda `Ctrl+Backspace`, que es lo
 que hace falta para corregir la palabra anterior.
 
+## Traducción instantánea
+
+Mientras hablás, dejá apretada una letra y soltala junto con la tecla del
+dictado: lo que dijiste se pega traducido. La `e` lo pasa a inglés y la `p` a
+portugués, y las letras y los idiomas los elegís vos.
+
+```
+AltGr+Control_R  ────────────────────────────────▶ se pega en castellano
+AltGr+Control_R + e (apretada al soltar)  ───────▶ se pega en inglés
+AltGr+Control_R + p (apretada al soltar)  ───────▶ se pega en portugués
+```
+
+**Lo que decide es qué tenés apretado en el instante en que soltás.** Podés
+empezar a hablar sin haber decidido nada y apretar la letra sobre el final; y si
+te arrepentiste a mitad de la frase, la soltás y el texto sale como lo dijiste.
+Si probaste con dos, gana la última. Mientras dictás, la ventanita muestra a
+dónde va —"Escuchando · sale en inglés"— así no queda a ciegas.
+
+![La ventanita mientras dictás para traducir](docs/overlay-traduciendo.png)
+
+Soltar todo es un solo movimiento de la mano y los dedos no se levantan
+sincronizados, así que la letra que se fue hasta 300 ms antes cuenta igual.
+
+**La letra no se escribe en ningún lado.** Mientras dura la grabación, esas
+teclas quedan agarradas por el dictador con un grab de X: no llegan a la
+aplicación de adelante ni disparan su atajo —`Ctrl+E` en un navegador abre la
+barra de búsqueda—. Fuera del dictado son teclas como cualquier otra.
+
+### El segundo para arrepentirse
+
+Una traducción puede salir torcida, y darse cuenta después de que se pegó en el
+chat es tarde. Así que el texto traducido se muestra un momento en la ventanita
+antes de pegarse:
+
+- **`Esc`** cancela el pegado, y te deja la traducción en el portapapeles por si
+  igual la querías.
+- **La tecla del dictado** la da por buena y la pega sin esperar.
+- Si no hacés nada, se pega sola cuando se acaba el tiempo.
+
+![El segundo para cancelar el pegado](docs/overlay-antes-de-pegar.png)
+
+Ese momento es `translate.preview_ms`, 1200 de fábrica; en `0` se pega derecho,
+sin pausa. El dictado que no se tradujo se pega en el acto, como siempre.
+
+### Qué traduce, y con qué
+
+Traduce el traductor de Google, desde el mismo Chrome que te está escuchando:
+la página que corre el reconocimiento de voz le pide la traducción al endpoint
+que usa el traductor del navegador. **Sin API key y sin factura**, igual que el
+dictado.
+
+De ahí sale la única restricción: **anda sólo con `engine = "chrome"`**. Whisper
+transcribe local y no tiene con qué traducir, y con Google Cloud cada llamada se
+factura —meter un servicio pago abajo de una tecla es una sorpresa cara—. Con
+esos dos motores, la sección aparece apagada en la configuración y las letras no
+hacen nada.
+
+El idioma de origen se detecta solo, así que dictar en inglés y pedir portugués
+también funciona, sin tocar el idioma del reconocimiento.
+
+**Los comandos hablados corren antes de traducir.** Se dicen en castellano, y
+mandarle "coma" al traductor devolvería la palabra *comma* escrita con letras en
+vez del signo.
+
+**Si el traductor no contesta**, se pega lo que dijiste con el aviso al lado. Un
+dictado nunca se pierde por culpa de la traducción.
+
+### Elegir las letras y los idiomas
+
+En la pantalla de configuración hay una tabla: una letra a la izquierda, el
+idioma a la derecha, y *Agregar un idioma* para sumar los que quieras.
+
+![La tabla de idiomas en la configuración](docs/config-traduccion.png)
+
+O en el archivo:
+
+```toml
+[translate]
+enabled = true
+preview_ms = 1200          # el ratito que se muestra antes de pegar
+timeout_s = 10             # si el traductor tarda más, se pega lo que dijiste
+
+[translate.keys]
+e = "en"
+p = "pt"
+f = "fr"
+j = "ja"
+```
+
+Los códigos son los de Google Translate: `en`, `pt`, `fr`, `it`, `de`, `ja`,
+`zh-CN`… La pantalla de configuración ofrece 31, y el que falte se escribe a
+mano acá y funciona igual.
+
+`dictador doctor` te dice cómo quedó: a qué idioma manda cada letra, si el motor
+que tenés puede traducir, y si alguna letra no está en tu teclado.
+
 ## Elegir motor
 
 Hay tres, y se cambian sin reiniciar nada. Lo más cómodo es hacerle **click a la
@@ -432,6 +529,15 @@ enabled = true             # los comandos hablados: "coma", "entre corchetes"…
 
 [commands.replacements]
 # "dos puntos" = ":"       # los tuyos; un valor vacío apaga uno de fábrica
+
+[translate]
+enabled = true             # traducir según la letra que tengas apretada
+preview_ms = 1200          # el ratito para leerla y cancelar con Esc
+timeout_s = 10
+
+[translate.keys]
+e = "en"                   # la letra que apretás → el idioma al que va
+p = "pt"
 ```
 
 ## Cómo está hecho

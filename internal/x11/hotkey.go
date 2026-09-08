@@ -3,6 +3,7 @@ package x11
 import (
 	"encoding/binary"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/jezek/xgb"
@@ -127,18 +128,33 @@ const (
 	Release
 	// OtherKey: se apretó cualquier otra tecla, que es motivo para cancelar.
 	OtherKey
+	// Cancel: se apretó Escape, que corta lo que esté en curso.
+	Cancel
 )
 
 // Listener escucha la tecla del dictado con su propia conexión X.
 type Listener struct {
 	conn   *Conn
 	combo  *Combo
+	keymap *Keymap
 	events chan HotkeyEvent
 	done   chan struct{}
 	once   sync.Once
 
 	triggerDown bool
 	engaged     bool
+	escape      map[int]bool
+
+	// Las teclas de idioma se leen desde el bucle de eventos y se cambian desde
+	// el daemon cuando se guarda la configuración, así que van con candado.
+	mu      sync.Mutex
+	langs   *LanguageKeys
+	tracker *langTracker
+	// release es la tecla de idioma que estaba en juego al soltar el combo, que
+	// es la que decide el idioma del dictado que se acaba de terminar.
+	release LanguageKey
+	grabbed []int
+	hints   chan LanguageKey
 }
 
 // NewListener abre la conexión, valida la tecla y deja todo listo para Run.
@@ -169,12 +185,100 @@ func NewListener(keySpec string) (*Listener, error) {
 		conn.Close()
 		return nil, err
 	}
+	// Escape se resuelve una vez: es la tecla de arrepentirse, y tiene que
+	// funcionar aunque la traducción esté apagada.
+	escape, err := resolve(keymap, "Escape")
+	if err != nil {
+		escape = map[int]bool{}
+	}
+	tracker := newLangTracker()
+	tracker.keys = &LanguageKeys{codes: map[int]LanguageKey{}}
 	return &Listener{
-		conn:   conn,
-		combo:  combo,
-		events: make(chan HotkeyEvent, 8),
-		done:   make(chan struct{}),
+		conn:    conn,
+		combo:   combo,
+		escape:  escape,
+		keymap:  keymap,
+		events:  make(chan HotkeyEvent, 8),
+		done:    make(chan struct{}),
+		tracker: tracker,
+		langs:   tracker.keys,
+		hints:   make(chan LanguageKey, 8),
 	}, nil
+}
+
+// WatchLanguages le dice al listener qué letras eligen idioma.
+//
+// Se puede llamar con el dictado andando: es lo que pasa cuando guardás la
+// tabla desde la pantalla de configuración.
+func (l *Listener) WatchLanguages(table map[string]string) []error {
+	keys, problems := NewLanguageKeys(table, l.keymap)
+	l.mu.Lock()
+	l.langs = keys
+	l.tracker.keys = keys
+	l.tracker.reset()
+	l.mu.Unlock()
+	return problems
+}
+
+// Hints avisa a qué idioma se va a traducir mientras seguís hablando, para que
+// la ventanita lo muestre antes de que sueltes.
+func (l *Listener) Hints() <-chan LanguageKey { return l.hints }
+
+// ReleaseLanguage es el idioma que estaba elegido cuando soltaste el combo.
+//
+// Se lee después de recibir el Release, y el canal es lo que garantiza que lo
+// que se lee es lo que se escribió antes de mandarlo.
+func (l *Listener) ReleaseLanguage() LanguageKey {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.release
+}
+
+// GrabLanguageKeys se queda con las teclas de idioma mientras dura la
+// grabación, para que elegir el idioma no escriba la letra en la app de
+// enfrente.
+func (l *Listener) GrabLanguageKeys() error {
+	l.mu.Lock()
+	codes := l.langs.Keycodes()
+	if len(l.grabbed) > 0 || len(codes) == 0 {
+		l.mu.Unlock()
+		return nil
+	}
+	l.grabbed = codes
+	l.mu.Unlock()
+	return l.conn.GrabKeys(codes)
+}
+
+// GrabCancelKey se queda con Escape mientras dura la pausa de la traducción.
+//
+// Sin el grab, el Escape con el que cancelás el pegado le llega también a la
+// aplicación de adelante, y ahí cierra el diálogo o el menú que tuvieras
+// abierto: cancelar una cosa terminaría cancelando dos.
+func (l *Listener) GrabCancelKey() error {
+	return l.conn.GrabKeys(l.escapeCodes())
+}
+
+// UngrabCancelKey devuelve Escape al resto del sistema.
+func (l *Listener) UngrabCancelKey() { l.conn.UngrabKeys(l.escapeCodes()) }
+
+func (l *Listener) escapeCodes() []int {
+	codes := make([]int, 0, len(l.escape))
+	for code := range l.escape {
+		codes = append(codes, code)
+	}
+	sort.Ints(codes)
+	return codes
+}
+
+// UngrabLanguageKeys devuelve las teclas al resto del sistema.
+func (l *Listener) UngrabLanguageKeys() {
+	l.mu.Lock()
+	codes := l.grabbed
+	l.grabbed = nil
+	l.mu.Unlock()
+	if len(codes) > 0 {
+		l.conn.UngrabKeys(codes)
+	}
 }
 
 // Combo es la tecla que quedó escuchando.
@@ -210,14 +314,23 @@ func (l *Listener) Run() {
 func (l *Listener) handle(raw RawKeyEvent) {
 	isTrigger := l.combo.Trigger[raw.Keycode]
 	isMod := !isTrigger && l.combo.All[raw.Keycode]
+	isLanguage := !isTrigger && !isMod && l.trackLanguage(raw)
 
 	if raw.Evtype == xiRawKeyPress {
 		switch {
+		case l.escape[raw.Keycode]:
+			// Escape es arrepentirse: corta el dictado en curso, y durante la
+			// pausa de la traducción cancela el pegado.
+			l.emit(Cancel)
+		case isLanguage:
+			// Elegir el idioma no cancela el dictado ni cuenta como "otra
+			// tecla": es parte de dictar.
 		case isTrigger:
 			l.triggerDown = true
 			// X repite el press mientras la tecla está hundida.
 			if !l.engaged && l.modsHeld() {
 				l.engaged = true
+				l.startLanguages()
 				l.emit(Press)
 			}
 		case isMod:
@@ -225,6 +338,7 @@ func (l *Listener) handle(raw RawKeyEvent) {
 			// modificador) también tiene que valer.
 			if !l.engaged && l.triggerDown && l.modsHeld() {
 				l.engaged = true
+				l.startLanguages()
 				l.emit(Press)
 			}
 		default:
@@ -234,16 +348,82 @@ func (l *Listener) handle(raw RawKeyEvent) {
 	}
 
 	switch {
+	case isLanguage:
 	case isTrigger:
 		l.triggerDown = false
 		if l.engaged {
 			l.engaged = false
+			l.rememberLanguage()
 			l.emit(Release)
 		}
 	case isMod && l.engaged && !l.modsHeld():
 		l.engaged = false
+		l.rememberLanguage()
 		l.emit(Release)
 	}
+}
+
+// trackLanguage anota el press o el release de una tecla de idioma y avisa a la
+// ventanita si el idioma elegido cambió. Devuelve si la tecla era de idioma.
+func (l *Listener) trackLanguage(raw RawKeyEvent) bool {
+	l.mu.Lock()
+	if _, ok := l.langs.Lookup(raw.Keycode); !ok {
+		l.mu.Unlock()
+		return false
+	}
+	before := l.tracker.live()
+	if raw.Evtype == xiRawKeyPress {
+		l.tracker.press(raw.Keycode)
+	} else {
+		l.tracker.release(raw.Keycode)
+	}
+	after := l.tracker.live()
+	engaged := l.engaged
+	l.mu.Unlock()
+
+	if engaged && after != before {
+		select {
+		case l.hints <- after:
+		default:
+		}
+	}
+	return true
+}
+
+// rememberLanguage congela el idioma en el instante del release, que es cuando
+// se decide, y no cuando el daemon llega a mirarlo.
+func (l *Listener) rememberLanguage() {
+	l.mu.Lock()
+	empty := l.tracker.keys.Empty()
+	l.mu.Unlock()
+	if empty {
+		l.mu.Lock()
+		l.release = LanguageKey{}
+		l.mu.Unlock()
+		return
+	}
+	// Preguntarle a X qué sigue hundido es lo que salva al release que se
+	// perdió; va afuera del candado porque es un viaje al servidor.
+	confirmed, err := l.conn.KeysDown()
+	if err != nil {
+		confirmed = nil
+	}
+	l.mu.Lock()
+	key, ok := l.tracker.current(confirmed)
+	if !ok {
+		key = LanguageKey{}
+	}
+	l.release = key
+	l.mu.Unlock()
+}
+
+// startLanguages arranca un dictado con la cuenta de teclas de idioma en cero:
+// lo que hayas apretado antes de empezar a hablar no elige nada.
+func (l *Listener) startLanguages() {
+	l.mu.Lock()
+	l.tracker.reset()
+	l.release = LanguageKey{}
+	l.mu.Unlock()
 }
 
 func (l *Listener) modsHeld() bool {

@@ -157,6 +157,24 @@
     padding: 14px 22px; border-top: 1px solid #2a2a34;
   }
   .sheet footer .spacer { flex: 1; }
+  /* La tabla de la traducción vive en la página, sin ventanita aparte: son
+     tres o cuatro filas y esconderlas detrás de un botón las haría invisibles. */
+  .langs { margin: 12px 0 0 25px; display: flex; flex-direction: column; gap: 8px; }
+  .lang-row { display: flex; align-items: center; gap: 10px; }
+  .lang-row .letter {
+    width: 44px; text-align: center; text-transform: lowercase;
+    font-weight: 600; letter-spacing: .5px;
+  }
+  .lang-row .arrow { color: var(--dim); font-size: 13px; }
+  .lang-row select { flex: 1; max-width: 260px; }
+  .lang-row button {
+    background: transparent; border: 1px solid transparent; color: var(--dim);
+    border-radius: 7px; padding: 5px 9px; font-size: 13px; cursor: pointer;
+  }
+  .lang-row button:hover { background: var(--card); border-color: var(--line); color: var(--text); }
+  .langs.off { opacity: .45; pointer-events: none; }
+  #langsEmpty { color: var(--dim); font-size: 13px; }
+
   #commandsMessage { font-size: 12.5px; }
   #commandsMessage.error { color: var(--warn); }
   #commandsMessage.ok { color: #78c88c; }
@@ -283,6 +301,35 @@
         </p>
       </label>
       <button type="button" class="ghost" id="openCommands">Editar los comandos…</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Traducción instantánea</legend>
+      <label class="engine">
+        <div class="row">
+          <input type="checkbox" id="translate" {{if .Translate}}checked{{end}}
+                 {{if not .CanTranslate}}disabled{{end}}>
+          <strong>Traducir lo dictado antes de pegarlo</strong>
+        </div>
+        <p class="hint">
+          Mientras hablás, dejá apretada la letra del idioma y soltala junto con
+          la tecla del dictado: lo que dijiste se pega traducido. Sin ninguna
+          letra apretada, se pega tal cual. La traducción se muestra un segundo
+          antes de pegarse, y <strong>Esc</strong> la cancela.
+        </p>
+        {{if not .CanTranslate}}
+          <p class="hint warn">
+            Anda con el motor <strong>Chrome / Web Speech</strong>, que es el que
+            puede traducir gratis desde el mismo navegador que te escucha.
+            Elegilo arriba y esto se prende.
+          </p>
+        {{end}}
+      </label>
+
+      <div class="langs{{if not .CanTranslate}} off{{end}}" id="langs"></div>
+      <p class="hint" id="langsEmpty" hidden>Sin ninguna letra, no hay nada que traducir.</p>
+      <button type="button" class="ghost" id="addLang" style="margin-top:12px"
+              {{if not .CanTranslate}}disabled{{end}}>Agregar un idioma</button>
     </fieldset>
 
     <fieldset>
@@ -748,6 +795,88 @@
     }
   }
 
+  // La tabla de la traducción: una letra y el idioma al que manda.
+  //
+  // Se dibuja desde JS y no desde la plantilla porque las filas se agregan y se
+  // borran sin recargar, y tener el mismo HTML escrito en dos lugares —uno en Go
+  // y otro acá— es la manera segura de que un día digan cosas distintas.
+  const LANGUAGES = {{.Languages}};
+  const langs = document.getElementById('langs');
+  const langsEmpty = document.getElementById('langsEmpty');
+  const translateOn = document.getElementById('translate');
+
+  function langRow(letter, code) {
+    const row = document.createElement('div');
+    row.className = 'lang-row';
+
+    const key = document.createElement('input');
+    key.type = 'text';
+    key.className = 'letter';
+    key.maxLength = 1;
+    key.value = letter || '';
+    key.placeholder = '·';
+    key.title = 'la letra que apretás mientras dictás';
+    // Una letra sola: lo que se escriba encima reemplaza a lo que había, que es
+    // lo que uno espera de un casillero de un carácter.
+    key.addEventListener('input', () => {
+      key.value = key.value.trim().slice(-1).toLowerCase();
+    });
+
+    const arrow = document.createElement('span');
+    arrow.className = 'arrow';
+    arrow.textContent = '→';
+
+    const select = document.createElement('select');
+    for (const language of LANGUAGES) {
+      const option = document.createElement('option');
+      option.value = language.code;
+      option.textContent = language.name;
+      select.appendChild(option);
+    }
+    // Un idioma escrito a mano en el config.toml que no esté en la lista se
+    // suma como una opción más, para que guardar no lo borre.
+    if (code && !LANGUAGES.some(l => l.code === code)) {
+      const option = document.createElement('option');
+      option.value = code;
+      option.textContent = code;
+      select.appendChild(option);
+    }
+    select.value = code || 'en';
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = 'Sacar';
+    remove.title = 'sacar este idioma';
+    remove.addEventListener('click', () => { row.remove(); drawLangsEmpty(); });
+
+    row.append(key, arrow, select, remove);
+    return row;
+  }
+
+  function drawLangsEmpty() {
+    langsEmpty.hidden = langs.children.length > 0;
+  }
+
+  function readLangs() {
+    const table = {};
+    for (const row of langs.children) {
+      const letter = row.querySelector('input').value.trim().toLowerCase();
+      const code = row.querySelector('select').value;
+      if (letter && code) table[letter] = code;
+    }
+    return table;
+  }
+
+  {{range .TranslateKeys}}langs.appendChild(langRow({{.Key}}, {{.Language}}));
+  {{end}}
+  drawLangsEmpty();
+
+  document.getElementById('addLang').addEventListener('click', () => {
+    langs.appendChild(langRow('', 'en'));
+    drawLangsEmpty();
+    langs.lastElementChild.querySelector('input').focus();
+  });
+
   form.addEventListener('submit', async event => {
     event.preventDefault();
     message.className = '';
@@ -766,6 +895,8 @@
         position: document.getElementById('position').value,
         commands: document.getElementById('commands').checked,
         trailing_space: document.getElementById('trailing').checked,
+        translate: translateOn.checked,
+        translate_keys: readLangs(),
       }),
     });
     const body = await answer.json();

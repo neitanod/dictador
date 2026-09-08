@@ -49,9 +49,38 @@ const LANG = %s;
 // Cuántos reintentos seguidos contra un server que no contesta antes de dar por
 // muerto al dictador y cerrar este Chrome.
 const HUERFANO_TRAS = %d;
-const post = (kind, text) =>
-  fetch('/event', {method: 'POST', body: JSON.stringify({kind, text: text || ''})})
+const post = (kind, text, extra) =>
+  fetch('/event', {method: 'POST', body: JSON.stringify(
+    Object.assign({kind, text: text || ''}, extra || {}))})
     .catch(() => {});
+
+// La traducción sale de acá adentro y no del programa en Go a propósito: este
+// es el endpoint que usa el traductor del propio Chrome, contesta con CORS
+// abierto y sin API key, y pedido desde una página es un pedido más de los que
+// hace un navegador. El texto va por POST porque un dictado largo no entra en
+// una URL.
+const TRANSLATE = 'https://translate.googleapis.com/translate_a/single';
+
+async function translate(job) {
+  const url = TRANSLATE + '?client=gtx&sl=' + encodeURIComponent(job.from || 'auto') +
+    '&tl=' + encodeURIComponent(job.to) + '&dt=t';
+  try {
+    const answer = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8'},
+      body: 'q=' + encodeURIComponent(job.text),
+    });
+    if (!answer.ok) throw new Error('HTTP ' + answer.status);
+    const data = JSON.parse(await answer.text());
+    // data[0] son los tramos en que Google partió el texto, cada uno con la
+    // traducción primero y el original después; data[2] es el idioma que
+    // detectó.
+    const text = (data[0] || []).map(part => part[0] || '').join('');
+    post('translation', text, {id: job.id, from: data[2] || ''});
+  } catch (e) {
+    post('translation-error', String(e && e.message || e), {id: job.id});
+  }
+}
 
 let rec = null, heard = '';
 
@@ -96,6 +125,9 @@ async function loop() {
       fallos = 0;
       if (command === 'start') start();
       else if (command === 'stop') stop();
+      // Sin await: traducir tarda lo que tarde internet, y mientras tanto la
+      // tecla del dictado tiene que seguir contestando.
+      else if (command.startsWith('translate ')) translate(JSON.parse(command.slice(10)));
     } catch (e) {
       if (++fallos >= HUERFANO_TRAS) { window.close(); return; }
       await new Promise(r => setTimeout(r, 500));
@@ -140,6 +172,9 @@ type Chrome struct {
 	readyTimeout time.Duration
 	finalTimeout time.Duration
 	headless     bool
+	// translateTimeout es lo que se espera al traductor antes de decir que no
+	// contestó y dejar el dictado como se dijo.
+	translateTimeout time.Duration
 	// orphanRetries lo baja el test para no esperar los 20s de la vida real.
 	orphanRetries int
 
@@ -156,6 +191,10 @@ type Chrome struct {
 	listening bool
 	exited    chan struct{}
 
+	// jobs son las traducciones pedidas y todavía sin contestar, por id.
+	jobs   map[string]chan translationResult
+	nextID int
+
 	ready chan struct{}
 	done  chan struct{}
 	// readyOnce y doneOnce evitan cerrar dos veces el mismo canal cuando la
@@ -170,15 +209,17 @@ func NewChrome(opts Options) *Chrome {
 		language = GoogleLocale(opts.STT)
 	}
 	return &Chrome{
-		binary:       ChromeBinary(opts.STT.ChromeBinary),
-		language:     language,
-		source:       opts.Device,
-		readyTimeout: seconds(opts.STT.ChromeReadyTimeoutS, 25),
-		finalTimeout: seconds(opts.STT.ChromeFinalTimeoutS, 6),
-		headless:     opts.STT.ChromeHeadless,
-		commands:     make(chan string, 4),
-		ready:        make(chan struct{}),
-		done:         make(chan struct{}),
+		binary:           ChromeBinary(opts.STT.ChromeBinary),
+		language:         language,
+		source:           opts.Device,
+		readyTimeout:     seconds(opts.STT.ChromeReadyTimeoutS, 25),
+		finalTimeout:     seconds(opts.STT.ChromeFinalTimeoutS, 6),
+		translateTimeout: seconds(opts.Translate.TimeoutS, 10),
+		headless:         opts.STT.ChromeHeadless,
+		commands:         make(chan string, 4),
+		jobs:             map[string]chan translationResult{},
+		ready:            make(chan struct{}),
+		done:             make(chan struct{}),
 	}
 }
 
@@ -295,8 +336,15 @@ func (c *Chrome) startServer() error {
 		var payload struct {
 			Kind string `json:"kind"`
 			Text string `json:"text"`
+			ID   string `json:"id"`
+			From string `json:"from"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&payload)
+		if strings.HasPrefix(payload.Kind, "translation") {
+			c.onTranslation(payload.Kind, payload.ID, payload.Text, payload.From)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		c.onEvent(payload.Kind, payload.Text)
 		w.WriteHeader(http.StatusOK)
 	})
@@ -476,6 +524,98 @@ func (c *Chrome) Transcribe(_ []float32, partial bool) (string, error) {
 		return c.PartialText(), nil
 	}
 	return c.FinishLive()
+}
+
+// translationResult es lo que vuelve de la página por una traducción pedida.
+type translationResult struct {
+	text string
+	from string
+	err  string
+}
+
+// Translate traduce el dictado usando el traductor de Google, desde el mismo
+// Chrome que lo escuchó.
+//
+// El idioma de origen se deja en automático: la página que lo pide detecta sola
+// de qué idioma viene, y así dictar en inglés y pedir portugués también anda,
+// sin depender de en qué idioma esté configurado el reconocimiento.
+func (c *Chrome) Translate(text, target string) (Translation, error) {
+	text = strings.TrimSpace(text)
+	target = strings.TrimSpace(target)
+	if text == "" || target == "" {
+		return Translation{Text: text}, nil
+	}
+	// Que Chrome esté vivo: el dictado pudo venir de un motor recién cambiado, o
+	// del Chrome que se cerró solo por quedarse huérfano.
+	if err := c.Load(); err != nil {
+		return Translation{}, err
+	}
+
+	id := c.newJobID()
+	job, _ := json.Marshal(struct {
+		ID   string `json:"id"`
+		To   string `json:"to"`
+		Text string `json:"text"`
+	}{ID: id, To: target, Text: text})
+
+	answers := make(chan translationResult, 1)
+	c.mu.Lock()
+	c.jobs[id] = answers
+	exited := c.exited
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		delete(c.jobs, id)
+		c.mu.Unlock()
+	}()
+
+	c.send("translate " + string(job))
+
+	select {
+	case answer := <-answers:
+		if answer.err != "" {
+			return Translation{}, errf("el traductor de Google no contestó: %s", answer.err)
+		}
+		if strings.TrimSpace(answer.text) == "" {
+			return Translation{}, errf("el traductor de Google devolvió un texto vacío")
+		}
+		return Translation{Text: answer.text, From: answer.from}, nil
+	case <-exited:
+		return Translation{}, errf("Chrome se cerró antes de traducir")
+	case <-time.After(c.translateTimeout):
+		return Translation{}, errf("el traductor tardó más de %.0fs", c.translateTimeout.Seconds())
+	}
+}
+
+func (c *Chrome) newJobID() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.nextID++
+	return fmt.Sprintf("t%d", c.nextID)
+}
+
+// onTranslation le entrega la respuesta al Translate que la está esperando.
+//
+// Una respuesta sin nadie esperándola se tira: es la que llegó después del
+// timeout, y el dictado ya se pegó sin ella.
+func (c *Chrome) onTranslation(kind, id, text, from string) {
+	c.mu.Lock()
+	answers, ok := c.jobs[id]
+	c.mu.Unlock()
+	if !ok {
+		return
+	}
+	result := translationResult{text: text, from: from}
+	if kind == "translation-error" {
+		result.err = text
+		if result.err == "" {
+			result.err = "error desconocido"
+		}
+	}
+	select {
+	case answers <- result:
+	default:
+	}
 }
 
 // Close cierra Chrome, el server y el perfil temporal.

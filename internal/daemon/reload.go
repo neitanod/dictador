@@ -18,11 +18,12 @@ import (
 type reloadPlan struct {
 	Engine    bool
 	Placement bool
+	Languages bool
 	Restart   []string
 }
 
 func (p reloadPlan) busy() bool {
-	return p.Engine || p.Placement || len(p.Restart) > 0
+	return p.Engine || p.Placement || p.Languages || len(p.Restart) > 0
 }
 
 // notice es lo que se le muestra al usuario, o "" si no hay nada que decirle.
@@ -42,6 +43,10 @@ func planReload(old, next config.Config) reloadPlan {
 	plan.Engine = !reflect.DeepEqual(old.STT, next.STT)
 	plan.Placement = old.Overlay.Screen != next.Overlay.Screen ||
 		old.Overlay.Position != next.Overlay.Position
+	// Las letras que eligen idioma se resuelven contra el teclado una vez, así
+	// que cambiarlas en el archivo pide volver a resolverlas.
+	plan.Languages = old.Translate.Enabled != next.Translate.Enabled ||
+		!reflect.DeepEqual(old.Translate.Keys, next.Translate.Keys)
 
 	if old.Hotkey.Key != next.Hotkey.Key {
 		plan.Restart = append(plan.Restart, "la tecla nueva")
@@ -104,11 +109,17 @@ func (d *Daemon) reloadConfig() {
 	if plan.Engine {
 		d.modelReady = false
 		if !d.buildEngine() {
+			d.watchLanguageKeys()
 			d.showError(d.engErr)
 			return
 		}
 		d.log("motor nuevo: " + d.EngineLine())
 		go d.preload()
+	}
+	// Después del motor: qué letras escuchar depende de si el motor que quedó
+	// sabe traducir.
+	if plan.Engine || plan.Languages {
+		d.watchLanguageKeys()
 	}
 	d.log("releí " + path)
 	if aviso := plan.notice(); aviso != "" {

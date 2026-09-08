@@ -87,6 +87,23 @@ type Commands struct {
 	Replacements map[string]string `toml:"replacements"`
 }
 
+// Translate: traducir lo dictado antes de pegarlo.
+//
+// Mientras hablás, la letra que tengas apretada al soltar la tecla del dictado
+// elige el idioma: con la "e" abajo el texto se pega en inglés. Sin ninguna
+// letra apretada, se pega como lo dijiste. Sólo anda con el motor chrome, que
+// es el que puede hablar con el traductor de Google sin API key.
+type Translate struct {
+	Enabled bool `toml:"enabled"`
+	// Keys es la letra que apretás → el idioma al que se traduce.
+	Keys map[string]string `toml:"keys"`
+	// TimeoutS es lo que se espera al traductor antes de pegar el original.
+	TimeoutS float64 `toml:"timeout_s"`
+	// PreviewMs es el ratito que la traducción se muestra en la ventanita antes
+	// de pegarse, para poder leerla y cancelar con Escape. 0 la pega derecho.
+	PreviewMs int `toml:"preview_ms"`
+}
+
 // Overlay: la ventanita que muestra lo que vas diciendo.
 type Overlay struct {
 	Enabled bool `toml:"enabled"`
@@ -110,13 +127,14 @@ type Limits struct {
 
 // Config es el config.toml entero, ya con los defaults aplicados.
 type Config struct {
-	Hotkey   Hotkey   `toml:"hotkey"`
-	Audio    Audio    `toml:"audio"`
-	STT      STT      `toml:"stt"`
-	Action   Action   `toml:"action"`
-	Commands Commands `toml:"commands"`
-	Overlay  Overlay  `toml:"overlay"`
-	Limits   Limits   `toml:"limits"`
+	Hotkey    Hotkey    `toml:"hotkey"`
+	Audio     Audio     `toml:"audio"`
+	STT       STT       `toml:"stt"`
+	Action    Action    `toml:"action"`
+	Commands  Commands  `toml:"commands"`
+	Translate Translate `toml:"translate"`
+	Overlay   Overlay   `toml:"overlay"`
+	Limits    Limits    `toml:"limits"`
 
 	// Path es el archivo del que salió, o "" si son los defaults pelados.
 	Path string `toml:"-" json:"-"`
@@ -162,6 +180,12 @@ func Defaults() Config {
 		Commands: Commands{
 			Enabled: true,
 		},
+		Translate: Translate{
+			Enabled:   true,
+			Keys:      DefaultTranslateKeys(),
+			TimeoutS:  10,
+			PreviewMs: 1200,
+		},
 		Overlay: Overlay{
 			Enabled:     true,
 			Screen:      "mouse",
@@ -176,6 +200,12 @@ func Defaults() Config {
 			MinSeconds: 0.35,
 		},
 	}
+}
+
+// DefaultTranslateKeys son las letras de fábrica: la "e" traduce a inglés y la
+// "p" a portugués, que son las dos que se piden todo el tiempo desde acá.
+func DefaultTranslateKeys() map[string]string {
+	return map[string]string{"e": "en", "p": "pt"}
 }
 
 // ConfigDir es donde vive el config.toml de esta app.
@@ -242,9 +272,18 @@ func Load(path string) (Config, error) {
 		return cfg, nil
 	}
 	// BurntSushi decodifica sobre la estructura que le das, así que lo que el
-	// archivo no menciona se queda con el default.
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+	// archivo no menciona se queda con el default. Con los mapas eso se vuelve
+	// en contra: decodificar sobre uno que ya tiene claves las suma en vez de
+	// reemplazarlas, y la letra que borraste del archivo volvería viva. Así que
+	// el mapa se vacía antes y los de fábrica se reponen sólo si el archivo no
+	// dice nada de esa tabla.
+	cfg.Translate.Keys = nil
+	md, err := toml.DecodeFile(path, &cfg)
+	if err != nil {
 		return cfg, err
+	}
+	if !md.IsDefined("translate", "keys") {
+		cfg.Translate.Keys = DefaultTranslateKeys()
 	}
 	cfg.Path = path
 	return cfg, nil

@@ -67,6 +67,22 @@ hide_delay_ms = 1400
 max_seconds = 120
 min_seconds = 0.35
 
+[translate]
+# Traducción instantánea: mientras dictás, dejá apretada la letra del idioma y
+# soltala junto con la tecla del dictado. Lo que dijiste se pega traducido; sin
+# ninguna letra apretada, se pega tal cual.
+# Anda sólo con engine = "chrome", que es el que puede traducir gratis desde el
+# mismo navegador que te escucha.
+enabled = true
+preview_ms = 1200          # el ratito que se muestra antes de pegar (Esc cancela)
+timeout_s = 10             # si el traductor tarda más, se pega lo que dijiste
+
+# La letra que apretás y el idioma al que va. Códigos de Google Translate:
+# en, pt, fr, it, de, ja, zh-CN…
+[translate.keys]
+e = "en"
+p = "pt"
+
 [commands]
 # Comandos hablados: decir "coma" escribe una coma, "abre pregunta" escribe ¿,
 # "entre corchetes" escribe [] y deja el cursor en el medio, "enter" y "tab" son

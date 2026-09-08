@@ -29,6 +29,7 @@ import (
 	"github.com/neitanod/dictador/internal/config"
 	"github.com/neitanod/dictador/internal/overlay"
 	"github.com/neitanod/dictador/internal/stt"
+	"github.com/neitanod/dictador/internal/translate"
 	"github.com/neitanod/dictador/internal/x11"
 )
 
@@ -52,6 +53,10 @@ type Values struct {
 	// Replacements son los comandos hablados que el usuario cambió, agregó o
 	// apagó, indexados por la frase tal como la dice.
 	Replacements map[string]string `json:"replacements"`
+	// Translate prende la traducción instantánea, y TranslateKeys es la tabla
+	// letra → idioma con la que se elige a cuál.
+	Translate     bool              `json:"translate"`
+	TranslateKeys map[string]string `json:"translate_keys"`
 }
 
 // Server sirve la página y avisa cuando se guarda.
@@ -367,6 +372,12 @@ type view struct {
 	Commands       bool
 	CommandCount   int
 	TrailingSpace  bool
+	Translate      bool
+	TranslateKeys  []translate.Binding
+	Languages      []translate.Language
+	// CanTranslate es si el motor elegido sabe traducir. Con los otros la
+	// sección se muestra igual, apagada y diciendo por qué.
+	CanTranslate bool
 }
 
 func (s *Server) snapshot() view {
@@ -394,6 +405,10 @@ func (s *Server) snapshot() view {
 		Commands:      cfg.Commands.Enabled,
 		CommandCount:  len(commands.List(commands.OptionsFrom(cfg))),
 		TrailingSpace: cfg.Action.TrailingSpace,
+		Translate:     cfg.Translate.Enabled,
+		TranslateKeys: translate.Bindings(cfg.Translate.Keys),
+		Languages:     translate.Languages,
+		CanTranslate:  stt.TranslatorEngines[engine],
 	}
 	if whisperOK {
 		v.WhisperDetail = "hay un whisper-server contestando en " + cfg.STT.WhisperServerURL
@@ -524,6 +539,15 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	if engine == "whisper" {
 		stored = "faster-whisper"
 	}
+	// Las letras de la traducción se revisan contra el teclado de verdad: una
+	// que este teclado no tiene se guardaría igual y no dispararía nunca, y el
+	// que la escribió creería que la traducción está rota.
+	keys, err := cleanTranslateKeys(values.TranslateKeys)
+	if err != nil {
+		replyJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
 	screen := strings.TrimSpace(values.Screen)
 	if screen == "" {
 		screen = "mouse"
@@ -541,6 +565,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		{Section: "overlay", Key: "position", Value: position},
 		{Section: "commands", Key: "enabled", Value: values.Commands},
 		{Section: "action", Key: "trailing_space", Value: values.TrailingSpace},
+		{Section: "translate", Key: "enabled", Value: values.Translate},
 	}
 	if !s.snapshot().KeyFromEnv {
 		settings = append(settings,
@@ -555,6 +580,12 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		replyJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	// La tabla va aparte porque es una lista: [Save] sabe cambiar valores y no
+	// sabe sacar la letra que borraste.
+	if _, err := config.SaveTable(path, "translate.keys", translatePairs(keys)); err != nil {
+		replyJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
 
 	cfg.STT.Engine = stored
 	cfg.STT.GoogleLanguage = locale
@@ -563,6 +594,8 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	cfg.Overlay.Position = position
 	cfg.Commands.Enabled = values.Commands
 	cfg.Action.TrailingSpace = values.TrailingSpace
+	cfg.Translate.Enabled = values.Translate
+	cfg.Translate.Keys = keys
 	if !s.snapshot().KeyFromEnv {
 		cfg.STT.GoogleAPIKey = strings.TrimSpace(values.GoogleAPIKey)
 	}
@@ -581,6 +614,8 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		Commands:       values.Commands,
 		TrailingSpace:  values.TrailingSpace,
 		Replacements:   cfg.Commands.Replacements,
+		Translate:      values.Translate,
+		TranslateKeys:  keys,
 	}
 	s.notify(out)
 	replyJSON(w, http.StatusOK, map[string]any{"ok": true, "engine": stored, "path": path})
@@ -662,6 +697,8 @@ func (s *Server) saveCommands(w http.ResponseWriter, r *http.Request) {
 		Commands:       cfg.Commands.Enabled,
 		TrailingSpace:  cfg.Action.TrailingSpace,
 		Replacements:   replacements,
+		Translate:      cfg.Translate.Enabled,
+		TranslateKeys:  cfg.Translate.Keys,
 	})
 	replyJSON(w, http.StatusOK, map[string]any{
 		"ok":      true,
@@ -696,6 +733,67 @@ func cleanCommands(edits []commandEdit) ([]config.Pair, map[string]string, error
 		return commands.NormalizePhrase(pairs[i].Key) < commands.NormalizePhrase(pairs[j].Key)
 	})
 	return pairs, replacements, nil
+}
+
+// cleanTranslateKeys revisa la tabla de la traducción y la deja lista para el
+// archivo.
+//
+// Se tiran las filas a medio llenar, se avisa la letra repetida —porque una de
+// las dos se perdería en silencio— y se avisa la que este teclado no tiene.
+func cleanTranslateKeys(table map[string]string) (map[string]string, error) {
+	keys := make(map[string]string, len(table))
+	seen := make(map[string]bool, len(table))
+	for raw, language := range table {
+		key := translate.NormalizeKey(raw)
+		language = translate.NormalizeCode(language)
+		if key == "" || language == "" {
+			continue
+		}
+		if seen[key] {
+			return nil, fmt.Errorf("la tecla %q está dos veces: dejá una sola", key)
+		}
+		seen[key] = true
+		keys[key] = language
+	}
+	if missing := unknownKeys(keys); len(missing) > 0 {
+		return nil, fmt.Errorf("tu teclado no tiene la tecla %q", missing[0])
+	}
+	return keys, nil
+}
+
+// unknownKeys son las letras que el teclado de esta máquina no tiene.
+//
+// Sin display no se puede saber, y ahí se dan todas por buenas: es lo que pasa
+// en los tests y en una sesión sin X, y negarse a guardar por no poder mirar
+// sería peor que guardar de más.
+func unknownKeys(keys map[string]string) []string {
+	conn, err := x11.Open()
+	if err != nil {
+		return nil
+	}
+	defer conn.Close()
+	keymap, err := conn.LoadKeymap()
+	if err != nil {
+		return nil
+	}
+	var missing []string
+	for key := range keys {
+		if _, err := keymap.KeycodesFor(key); err != nil {
+			missing = append(missing, key)
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+// translatePairs ordena la tabla como se escribe en el archivo.
+func translatePairs(keys map[string]string) []config.Pair {
+	bindings := translate.Bindings(keys)
+	pairs := make([]config.Pair, 0, len(bindings))
+	for _, b := range bindings {
+		pairs = append(pairs, config.Pair{Key: b.Key, Value: b.Language})
+	}
+	return pairs
 }
 
 // notify le pasa al daemon los valores nuevos, si es que hay quien escuche.

@@ -10,6 +10,7 @@ import (
 	"github.com/neitanod/dictador/internal/config"
 	"github.com/neitanod/dictador/internal/overlay"
 	"github.com/neitanod/dictador/internal/stt"
+	"github.com/neitanod/dictador/internal/translate"
 	"github.com/neitanod/dictador/internal/x11"
 )
 
@@ -59,6 +60,10 @@ func cmdDoctor(opts *options, args []string) int {
 
 	add("micrófono", microphone() != "", orElse(microphone(), "no encontré fuentes de entrada"))
 
+	// El mapa de teclado se guarda para el chequeo de la traducción, que va más
+	// abajo porque además depende del motor.
+	var keymap *x11.Keymap
+
 	// La conexión X sirve de una vez para la tecla, XInput2 y XTEST.
 	conn, xerr := x11.Open()
 	if xerr != nil {
@@ -99,7 +104,7 @@ func cmdDoctor(opts *options, args []string) int {
 		} else {
 			add("XTEST", true, "el pegado va sin xdotool")
 		}
-		keymap, err := conn.LoadKeymap()
+		keymap, err = conn.LoadKeymap()
 		if err != nil {
 			add("tecla "+cfg.Hotkey.Key, false, err.Error())
 		} else if combo, err := x11.ParseCombo(cfg.Hotkey.Key, keymap); err != nil {
@@ -135,6 +140,11 @@ func cmdDoctor(opts *options, args []string) int {
 	}
 	add("motores disponibles", true, strings.Join(stt.Available(engineOpts), ", "))
 
+	// Traducción instantánea: acá se mira cuando "la e no traduce", así que
+	// tiene que decir las tres cosas que pueden estar mal — apagada, motor que
+	// no traduce, o una letra que este teclado no tiene.
+	add("traducción", translationOK(cfg, keymap), describeTranslation(cfg, keymap))
+
 	ok := true
 	lines := make([]string, 0, len(checks)+4)
 	for _, c := range checks {
@@ -162,6 +172,58 @@ func cmdDoctor(opts *options, args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// translationOK dice si la traducción está en condiciones de disparar.
+//
+// Apagada cuenta como bien: es una decisión, no una falla.
+func translationOK(cfg config.Config, keymap *x11.Keymap) bool {
+	if !cfg.Translate.Enabled {
+		return true
+	}
+	engine, err := stt.Canonical(cfg.STT.Engine)
+	if err != nil || !stt.TranslatorEngines[engine] {
+		return false
+	}
+	return len(missingLanguageKeys(cfg, keymap)) == 0
+}
+
+// describeTranslation cuenta a qué idioma manda cada letra, y qué le falta.
+func describeTranslation(cfg config.Config, keymap *x11.Keymap) string {
+	if !cfg.Translate.Enabled {
+		return "apagada: prendela en la configuración o con translate.enabled = true"
+	}
+	engine, err := stt.Canonical(cfg.STT.Engine)
+	if err != nil || !stt.TranslatorEngines[engine] {
+		return "el motor " + cfg.STT.Engine + " no traduce: hace falta engine = \"chrome\""
+	}
+	bindings := translate.Bindings(cfg.Translate.Keys)
+	if len(bindings) == 0 {
+		return "sin ninguna letra configurada en [translate.keys]"
+	}
+	parts := make([]string, 0, len(bindings))
+	for _, b := range bindings {
+		parts = append(parts, strings.ToUpper(b.Key)+" → "+translate.Name(b.Language))
+	}
+	detail := strings.Join(parts, " · ")
+	if missing := missingLanguageKeys(cfg, keymap); len(missing) > 0 {
+		detail += " · tu teclado no tiene " + strings.Join(missing, ", ")
+	}
+	return detail
+}
+
+// missingLanguageKeys son las letras configuradas que este teclado no tiene.
+func missingLanguageKeys(cfg config.Config, keymap *x11.Keymap) []string {
+	if keymap == nil {
+		return nil // sin conexión X no se puede saber, y no es culpa de la tabla
+	}
+	var missing []string
+	for _, b := range translate.Bindings(cfg.Translate.Keys) {
+		if _, err := keymap.KeycodesFor(b.Key); err != nil {
+			missing = append(missing, b.Key)
+		}
+	}
+	return missing
 }
 
 // describePlacement cuenta en qué pantalla y en qué lugar va a aparecer el

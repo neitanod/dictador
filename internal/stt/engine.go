@@ -51,6 +51,35 @@ type LiveEngine interface {
 	FinishLive() (string, error)
 }
 
+// Translation es un texto traducido: cómo quedó y de qué idioma venía.
+type Translation struct {
+	Text string
+	From string
+}
+
+// Translator es un motor que además sabe traducir lo que dictaste antes de
+// pegarlo.
+//
+// Lo implementa sólo el motor chrome: la traducción sale del mismo Chrome que
+// ya está escuchando, que puede hablar con el traductor de Google sin API key
+// ni factura. Whisper transcribe local y no tiene con qué; Google Cloud cobra
+// cada llamada, y ahí meterle un servicio pago de arriba es una sorpresa cara.
+type Translator interface {
+	Engine
+	// Translate devuelve el texto en el idioma pedido, en código corto ("en").
+	Translate(text, target string) (Translation, error)
+}
+
+// CanTranslate dice si este motor puede traducir lo dictado.
+func CanTranslate(engine Engine) bool {
+	_, ok := engine.(Translator)
+	return ok
+}
+
+// TranslatorEngines son los motores que saben traducir, para poder decirlo en
+// la pantalla de configuración sin tener que armar uno.
+var TranslatorEngines = map[string]bool{"chrome": true}
+
 // Error es un problema del motor que se le puede mostrar al usuario.
 type Error struct{ msg string }
 
@@ -165,11 +194,17 @@ type Options struct {
 	STT        config.STT
 	SampleRate int
 	Device     string
+	Translate  config.Translate
 }
 
 // OptionsFrom arma las opciones desde la configuración entera.
 func OptionsFrom(cfg config.Config) Options {
-	return Options{STT: cfg.STT, SampleRate: cfg.Audio.SampleRate, Device: cfg.Audio.Device}
+	return Options{
+		STT:        cfg.STT,
+		SampleRate: cfg.Audio.SampleRate,
+		Device:     cfg.Audio.Device,
+		Translate:  cfg.Translate,
+	}
 }
 
 // Build arma el motor que dice la configuración.

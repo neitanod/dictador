@@ -14,6 +14,9 @@ type UI interface {
 	BeginListening(hint string)
 	// SetPartial: esto es lo que se viene entendiendo.
 	SetPartial(text string)
+	// SetHint cambia la etiqueta de arriba sin tocar el texto: es lo que dice
+	// a qué idioma se va a traducir mientras seguís hablando.
+	SetHint(hint string)
 	// SetMeter: nivel de audio en [0, 1] y segundos grabados.
 	SetMeter(level, elapsed float64)
 	// SetThinking: se soltó la tecla y se está transcribiendo.
@@ -46,6 +49,7 @@ type Nop struct{}
 
 func (Nop) BeginListening(string)                 {}
 func (Nop) SetPartial(string)                     {}
+func (Nop) SetHint(string)                        {}
 func (Nop) SetMeter(float64, float64)             {}
 func (Nop) SetThinking(string)                    {}
 func (Nop) SetDone(string, string, time.Duration) {}
