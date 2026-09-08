@@ -20,9 +20,11 @@ func TestChromeTraduceConGoogle(t *testing.T) {
 		t.Skip("no hay Chrome en esta máquina")
 	}
 
+	// Modo api a propósito: lo que se prueba acá es el endpoint, que es la red
+	// que atrapa el dictado cuando la página de Google no contesta.
 	chrome := NewChrome(Options{
 		STT:       config.STT{ChromeHeadless: true, ChromeReadyTimeoutS: 30},
-		Translate: config.Translate{TimeoutS: 20},
+		Translate: config.Translate{TimeoutS: 20, Mode: "api"},
 	})
 	defer chrome.Close()
 
@@ -56,7 +58,7 @@ func TestChromeTraduceUnDictadoLargo(t *testing.T) {
 
 	chrome := NewChrome(Options{
 		STT:       config.STT{ChromeHeadless: true, ChromeReadyTimeoutS: 30},
-		Translate: config.Translate{TimeoutS: 30},
+		Translate: config.Translate{TimeoutS: 30, Mode: "api"},
 	})
 	defer chrome.Close()
 	if err := chrome.Load(); err != nil {

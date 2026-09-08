@@ -206,6 +206,11 @@ func describeTranslation(cfg config.Config, keymap *x11.Keymap) string {
 		parts = append(parts, strings.ToUpper(b.Key)+" → "+translate.Name(b.Language))
 	}
 	detail := strings.Join(parts, " · ")
+	if strings.EqualFold(strings.TrimSpace(cfg.Translate.Mode), "api") {
+		detail += " · por el endpoint (traduce literal)"
+	} else {
+		detail += " · por la página de Google (traduce por sentido)"
+	}
 	if missing := missingLanguageKeys(cfg, keymap); len(missing) > 0 {
 		detail += " · tu teclado no tiene " + strings.Join(missing, ", ")
 	}

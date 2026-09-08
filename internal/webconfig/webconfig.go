@@ -57,6 +57,8 @@ type Values struct {
 	// letra → idioma con la que se elige a cuál.
 	Translate     bool              `json:"translate"`
 	TranslateKeys map[string]string `json:"translate_keys"`
+	// TranslateMode es de dónde sale la traducción: "web" o "api".
+	TranslateMode string `json:"translate_mode"`
 }
 
 // Server sirve la página y avisa cuando se guarda.
@@ -373,6 +375,7 @@ type view struct {
 	CommandCount   int
 	TrailingSpace  bool
 	Translate      bool
+	TranslateWeb   bool
 	TranslateKeys  []translate.Binding
 	Languages      []translate.Language
 	// CanTranslate es si el motor elegido sabe traducir. Con los otros la
@@ -406,6 +409,7 @@ func (s *Server) snapshot() view {
 		CommandCount:  len(commands.List(commands.OptionsFrom(cfg))),
 		TrailingSpace: cfg.Action.TrailingSpace,
 		Translate:     cfg.Translate.Enabled,
+		TranslateWeb:  !strings.EqualFold(strings.TrimSpace(cfg.Translate.Mode), "api"),
 		TranslateKeys: translate.Bindings(cfg.Translate.Keys),
 		Languages:     translate.Languages,
 		CanTranslate:  stt.TranslatorEngines[engine],
@@ -566,6 +570,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		{Section: "commands", Key: "enabled", Value: values.Commands},
 		{Section: "action", Key: "trailing_space", Value: values.TrailingSpace},
 		{Section: "translate", Key: "enabled", Value: values.Translate},
+		{Section: "translate", Key: "mode", Value: translateMode(values.TranslateMode)},
 	}
 	if !s.snapshot().KeyFromEnv {
 		settings = append(settings,
@@ -595,6 +600,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	cfg.Commands.Enabled = values.Commands
 	cfg.Action.TrailingSpace = values.TrailingSpace
 	cfg.Translate.Enabled = values.Translate
+	cfg.Translate.Mode = translateMode(values.TranslateMode)
 	cfg.Translate.Keys = keys
 	if !s.snapshot().KeyFromEnv {
 		cfg.STT.GoogleAPIKey = strings.TrimSpace(values.GoogleAPIKey)
@@ -615,6 +621,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		TrailingSpace:  values.TrailingSpace,
 		Replacements:   cfg.Commands.Replacements,
 		Translate:      values.Translate,
+		TranslateMode:  translateMode(values.TranslateMode),
 		TranslateKeys:  keys,
 	}
 	s.notify(out)
@@ -698,6 +705,7 @@ func (s *Server) saveCommands(w http.ResponseWriter, r *http.Request) {
 		TrailingSpace:  cfg.Action.TrailingSpace,
 		Replacements:   replacements,
 		Translate:      cfg.Translate.Enabled,
+		TranslateMode:  cfg.Translate.Mode,
 		TranslateKeys:  cfg.Translate.Keys,
 	})
 	replyJSON(w, http.StatusOK, map[string]any{
@@ -733,6 +741,15 @@ func cleanCommands(edits []commandEdit) ([]config.Pair, map[string]string, error
 		return commands.NormalizePhrase(pairs[i].Key) < commands.NormalizePhrase(pairs[j].Key)
 	})
 	return pairs, replacements, nil
+}
+
+// translateMode deja el modo en uno de los dos que existen. Cualquier otra cosa
+// cae en "web", que es el que traduce mejor.
+func translateMode(mode string) string {
+	if strings.EqualFold(strings.TrimSpace(mode), "api") {
+		return "api"
+	}
+	return "web"
 }
 
 // cleanTranslateKeys revisa la tabla de la traducción y la deja lista para el

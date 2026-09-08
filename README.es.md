@@ -305,10 +305,8 @@ sin pausa. El dictado que no se tradujo se pega en el acto, como siempre.
 
 ### Qué traduce, y con qué
 
-Traduce el traductor de Google, desde el mismo Chrome que te está escuchando:
-la página que corre el reconocimiento de voz le pide la traducción al endpoint
-que usa el traductor del navegador. **Sin API key y sin factura**, igual que el
-dictado.
+Traduce el traductor de Google, desde el mismo Chrome que te está escuchando.
+**Sin API key y sin factura**, igual que el dictado.
 
 De ahí sale la única restricción: **anda sólo con `engine = "chrome"`**. Whisper
 transcribe local y no tiene con qué traducir, y con Google Cloud cada llamada se
@@ -326,6 +324,57 @@ vez del signo.
 **Si el traductor no contesta**, se pega lo que dijiste con el aviso al lado. Un
 dictado nunca se pierde por culpa de la traducción.
 
+### De dónde sale la traducción
+
+Google tiene dos traductores, y no traducen igual:
+
+| | qué devuelve | cuánto tarda |
+|---|---|---|
+| **`web`** (de fábrica) | *Tomorrow I'm going to be a wreck* | ~1 segundo |
+| `api` | *Tomorrow I'm going to be shit* | ~300 ms |
+
+El de arriba es el de translate.google.com, el que traduce por sentido. El de
+abajo es el endpoint público que usan las apps y las extensiones, que traduce
+palabra por palabra. Se elige con `translate.mode`.
+
+**Y con `web`, el endpoint sigue estando de red.** Si la página no contesta, el
+dictado se pega igual —traducido por el otro camino— con el aviso al lado. Nunca
+te quedás sin texto por culpa del traductor.
+
+Conseguir el de arriba tuvo su gracia, y conviene saberlo antes de tocar esta
+parte: **Google decide cuál te da según cuánto parezcas un navegador de
+verdad.** Dos cosas lo delatan:
+
+- **Que el navegador diga ser headless en su User-Agent.** Se arregla poniéndole
+  el de un Chrome de escritorio, que es el mismo binario con otro nombre.
+- **Que Chrome elija solo el puerto por el que se lo maneja.** Pedirle el puerto
+  con un cero —que es lo que hace cualquier herramienta de automatización— le
+  prende adentro una bandera que dice que lo están manejando, Google la lee y te
+  sirve el traductor viejo. Con el puerto elegido de antemano, esa bandera queda
+  apagada.
+
+Y ese puerto abierto tiene una consecuencia que hubo que resolver aparte:
+**Chrome deja de cerrarse cuando se cierra su última pestaña.** El dictado ya
+sabía cerrar su propio Chrome cuando el dictador se moría de mala manera —la
+página se da cuenta de que nadie contesta y se cierra—, y con el puerto abierto
+eso dejaba un navegador entero vivo. Así que la página, además de cerrarse, le
+pide al navegador que se cierre él: la dirección para pedírselo viene puesta en
+la página, y Chrome la acepta porque al arrancarlo se le dice que confíe en ese
+origen y en ninguno más.
+
+**Lo que hay que saber del puerto:** mientras el dictado anda, ese Chrome queda
+escuchando en un puerto de loopback por el que se lo puede manejar entero. Es un
+Chrome dedicado, sin tus sesiones ni tus cookies, y el puerto no sale de la
+máquina; pero cualquier programa que corra en tu usuario puede hablarle. Si eso
+te incomoda, `translate.mode = "api"` no abre ningún puerto: se pierde la
+traducción por sentido y queda la literal.
+
+Por eso la traducción no sale de una API sino de la página: se escribe en el
+cuadro de la izquierda y se lee lo que aparece a la derecha, que es exactamente
+lo que hace una persona. El endpoint, aun llamándolo desde adentro de la propia
+página de Google, devuelve el modelo viejo: le falta un token antifraude que el
+JavaScript de Google arma para sus propios pedidos.
+
 ### Elegir las letras y los idiomas
 
 En la pantalla de configuración hay una tabla: una letra a la izquierda, el
@@ -338,8 +387,9 @@ O en el archivo:
 ```toml
 [translate]
 enabled = true
+mode = "web"               # web = como translate.google.com | api = el endpoint
 preview_ms = 1200          # el ratito que se muestra antes de pegar
-timeout_s = 10             # si el traductor tarda más, se pega lo que dijiste
+timeout_s = 20             # si el traductor tarda más, se pega lo que dijiste
 
 [translate.keys]
 e = "en"
@@ -532,8 +582,9 @@ enabled = true             # los comandos hablados: "coma", "entre corchetes"…
 
 [translate]
 enabled = true             # traducir según la letra que tengas apretada
+mode = "web"               # web = como translate.google.com | api = el endpoint
 preview_ms = 1200          # el ratito para leerla y cancelar con Esc
-timeout_s = 10
+timeout_s = 20
 
 [translate.keys]
 e = "en"                   # la letra que apretás → el idioma al que va

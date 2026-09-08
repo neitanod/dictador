@@ -326,6 +326,22 @@
         {{end}}
       </label>
 
+      <label class="engine" style="margin-top:10px">
+        <div class="row">
+          <input type="checkbox" id="translateWeb" {{if .TranslateWeb}}checked{{end}}
+                 {{if not .CanTranslate}}disabled{{end}}>
+          <strong>Traducir por sentido, como la web de Google</strong>
+        </div>
+        <p class="hint">
+          Google tiene dos traductores. Este es el de translate.google.com, que
+          entiende lo que quisiste decir: "mañana voy a estar hecho mierda" sale
+          como <em>tomorrow I'm going to be a wreck</em>. Tarda cerca de un
+          segundo. Destildado usa el otro, que traduce palabra por palabra
+          —<em>going to be shit</em>— y contesta al instante. Si el primero no
+          contesta, el segundo lo reemplaza solo.
+        </p>
+      </label>
+
       <div class="langs{{if not .CanTranslate}} off{{end}}" id="langs"></div>
       <p class="hint" id="langsEmpty" hidden>Sin ninguna letra, no hay nada que traducir.</p>
       <button type="button" class="ghost" id="addLang" style="margin-top:12px"
@@ -896,6 +912,7 @@
         commands: document.getElementById('commands').checked,
         trailing_space: document.getElementById('trailing').checked,
         translate: translateOn.checked,
+        translate_mode: document.getElementById('translateWeb').checked ? 'web' : 'api',
         translate_keys: readLangs(),
       }),
     });

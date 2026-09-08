@@ -55,6 +55,10 @@ type LiveEngine interface {
 type Translation struct {
 	Text string
 	From string
+	// Web dice si la traducción salió de la página de Google —la que traduce
+	// por sentido— o del endpoint, que es la red de abajo y traduce más
+	// literal. El daemon lo usa para avisarlo cuando cae a la red.
+	Web bool
 }
 
 // Translator es un motor que además sabe traducir lo que dictaste antes de
@@ -195,6 +199,9 @@ type Options struct {
 	SampleRate int
 	Device     string
 	Translate  config.Translate
+	// Verbose es el -v del daemon: los motores lo usan para contar lo que sólo
+	// importa cuando alguien está mirando.
+	Verbose bool
 }
 
 // OptionsFrom arma las opciones desde la configuración entera.

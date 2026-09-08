@@ -313,10 +313,8 @@ through. Dictation that was not translated pastes immediately, as always.
 
 ### What translates it
 
-Google Translate does, from the same Chrome that is listening to you: the page
-running speech recognition asks for the translation from the endpoint the
-browser's own translator uses. **No API key and no bill**, same as the
-dictation.
+Google Translate does, from the same Chrome that is listening to you. **No API
+key and no bill**, same as the dictation.
 
 Hence the one restriction: **it only works with `engine = "chrome"`**. Whisper
 transcribes locally and has nothing to translate with, and with Google Cloud
@@ -334,6 +332,55 @@ instead of the sign.
 **If the translator does not answer**, what you said gets pasted with a note
 next to it. Dictation is never lost because of the translation.
 
+### Where the translation comes from
+
+Google has two translators, and they do not translate alike:
+
+| | what it returns | how long |
+|---|---|---|
+| **`web`** (default) | *Tomorrow I'm going to be a wreck* | ~1 second |
+| `api` | *Tomorrow I'm going to be shit* | ~300 ms |
+
+The first is translate.google.com's, the one that translates for meaning. The
+second is the public endpoint apps and extensions use, which translates word by
+word. Pick with `translate.mode`.
+
+**And with `web`, the endpoint stays as a safety net.** If the page does not
+answer, the dictation is pasted anyway — translated the other way — with a note
+next to it. You never lose text because of the translator.
+
+Getting the first one had its trick, worth knowing before touching this part:
+**Google picks which one you get based on how much you look like a real
+browser.** Two things give it away:
+
+- **The browser claiming to be headless in its User-Agent.** Fixed by handing it
+  a desktop Chrome one — same binary, different name.
+- **Letting Chrome pick the port it is driven through.** Asking for the port
+  with a zero — what every automation tool does — turns on a flag inside saying
+  it is being driven, Google reads it and serves you the old translator. With
+  the port picked in advance, that flag stays off.
+
+That open port has a consequence that had to be handled separately: **Chrome
+stops closing itself when its last tab closes.** Dictation already knew how to
+close its own Chrome when the dictator died badly — the page notices nobody is
+answering and closes itself — and with the port open that left a whole browser
+alive. So the page, besides closing, asks the browser to close too: the address
+for asking comes embedded in the page, and Chrome accepts it because at launch
+it is told to trust that origin and no other.
+
+**What to know about that port:** while dictation runs, that Chrome listens on a
+loopback port through which it can be driven entirely. It is a dedicated Chrome,
+with none of your sessions or cookies, and the port never leaves the machine —
+but any program running as your user can talk to it. If that bothers you,
+`translate.mode = "api"` opens no port at all: you lose the meaning-aware
+translation and keep the literal one.
+
+That is why the translation comes from the page and not from an API: text goes
+into the box on the left and the result is read on the right, exactly what a
+person does. The endpoint returns the old model even when called from inside
+Google's own page: it is missing an anti-fraud token that Google's JavaScript
+builds for its own requests.
+
 ### Picking letters and languages
 
 The settings screen has a table: a letter on the left, the language on the
@@ -346,8 +393,9 @@ Or in the file:
 ```toml
 [translate]
 enabled = true
+mode = "web"               # web = like translate.google.com | api = the endpoint
 preview_ms = 1200          # how long it shows before pasting
-timeout_s = 10             # if the translator takes longer, your words go in
+timeout_s = 20             # if the translator takes longer, your words go in
 
 [translate.keys]
 e = "en"
@@ -541,8 +589,9 @@ enabled = true             # spoken commands: "coma", "entre corchetes"…
 
 [translate]
 enabled = true             # translate based on the letter you are holding
+mode = "web"               # web = like translate.google.com | api = the endpoint
 preview_ms = 1200          # the moment to read it and cancel with Esc
-timeout_s = 10
+timeout_s = 20
 
 [translate.keys]
 e = "en"                   # the letter you hold → the language it goes to

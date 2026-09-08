@@ -7,9 +7,14 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/neitanod/dictador/internal/config"
 )
 
 // El motor Chrome usa la Web Speech API, la misma que el microfonito de
@@ -46,6 +51,10 @@ const chromePage = `<!doctype html>
 <body>
 <script>
 const LANG = %s;
+// Cómo se le pide al navegador que se cierre entero. Viene puesta desde el
+// programa, que la sabe antes de servir esta página; el rebusque de pedirla
+// después es para el caso en que todavía no la supiera.
+const CIERRE_INICIAL = %s;
 // Cuántos reintentos seguidos contra un server que no contesta antes de dar por
 // muerto al dictador y cerrar este Chrome.
 const HUERFANO_TRAS = %d;
@@ -83,6 +92,37 @@ async function translate(job) {
 }
 
 let rec = null, heard = '';
+
+// Con el puerto de manejo abierto —el que hace falta para traducir como la
+// web— Chrome ya no se cierra cuando se cierra su última pestaña, así que
+// window.close() no alcanza para no dejar un navegador huérfano dando vueltas.
+// Por eso se pide de antemano, mientras el dictador vive, la dirección con la
+// que se le pide al navegador que se cierre entero.
+let cierreDelNavegador = CIERRE_INICIAL || null;
+// Se pide con paciencia: al arrancar la página, el navegador todavía puede no
+// estar listo para decir cómo se lo cierra, y el que la primera vez conteste
+// vacío no puede dejarnos sin la dirección para siempre.
+(async () => {
+  for (let intento = 0; intento < 15 && !cierreDelNavegador; intento++) {
+    try {
+      const texto = (await (await fetch('/browser-ws')).text()).trim();
+      if (texto) { cierreDelNavegador = texto; return; }
+    } catch (e) { /* el dictador se fue; ya no hay a quién preguntarle */ }
+    await new Promise(r => setTimeout(r, 1000));
+  }
+})();
+
+function cerrarTodo() {
+  if (!cierreDelNavegador) { window.close(); return; }
+  try {
+    const ws = new WebSocket(cierreDelNavegador);
+    ws.onopen = () => ws.send(JSON.stringify({id: 1, method: 'Browser.close'}));
+    // Si el navegador no se cierra en un segundo, al menos esta pestaña se va.
+    setTimeout(() => window.close(), 1000);
+  } catch (e) {
+    window.close();
+  }
+}
 
 function start() {
   if (rec) return;
@@ -129,7 +169,7 @@ async function loop() {
       // tecla del dictado tiene que seguir contestando.
       else if (command.startsWith('translate ')) translate(JSON.parse(command.slice(10)));
     } catch (e) {
-      if (++fallos >= HUERFANO_TRAS) { window.close(); return; }
+      if (++fallos >= HUERFANO_TRAS) { cerrarTodo(); return; }
       await new Promise(r => setTimeout(r, 500));
     }
   }
@@ -175,16 +215,29 @@ type Chrome struct {
 	// translateTimeout es lo que se espera al traductor antes de decir que no
 	// contestó y dejar el dictado como se dijo.
 	translateTimeout time.Duration
+	// translateMode es de dónde sale la traducción: "web" la pide en la página
+	// de translate.google.com y "api" en el endpoint público.
+	translateMode string
+	// translateLangs son los idiomas configurados, para tener sus pestañas
+	// listas antes del primer dictado.
+	translateLangs []string
 	// orphanRetries lo baja el test para no esperar los 20s de la vida real.
 	orphanRetries int
+	// verbose es el -v del daemon, para poder contar por qué la traducción
+	// buena no salió.
+	verbose bool
 
 	commands chan string
 
-	mu        sync.Mutex
-	proc      *exec.Cmd
-	server    *http.Server
-	listener  net.Listener
-	profile   string
+	mu       sync.Mutex
+	proc     *exec.Cmd
+	server   *http.Server
+	listener net.Listener
+	profile  string
+	// debugPort es por donde se le habla a este Chrome para manejar la página
+	// del traductor. Lo elige Chrome y lo deja escrito en el perfil.
+	debugPort int
+	web       *webTranslator
 	text      string
 	final     string
 	failure   string
@@ -200,6 +253,8 @@ type Chrome struct {
 	// readyOnce y doneOnce evitan cerrar dos veces el mismo canal cuando la
 	// página manda un evento repetido.
 	readyOnce sync.Once
+	// warmOnce: las pestañas del traductor se preparan una vez por proceso.
+	warmOnce sync.Once
 }
 
 // NewChrome arma el motor. No lanza nada hasta Load.
@@ -215,12 +270,35 @@ func NewChrome(opts Options) *Chrome {
 		readyTimeout:     seconds(opts.STT.ChromeReadyTimeoutS, 25),
 		finalTimeout:     seconds(opts.STT.ChromeFinalTimeoutS, 6),
 		translateTimeout: seconds(opts.Translate.TimeoutS, 10),
+		translateMode:    strings.ToLower(strings.TrimSpace(opts.Translate.Mode)),
+		verbose:          opts.Verbose,
+		translateLangs:   translateLanguages(opts.Translate),
 		headless:         opts.STT.ChromeHeadless,
 		commands:         make(chan string, 4),
 		jobs:             map[string]chan translationResult{},
 		ready:            make(chan struct{}),
 		done:             make(chan struct{}),
 	}
+}
+
+// translateLanguages son los idiomas destino configurados, sin repetidos y en
+// un orden fijo.
+func translateLanguages(cfg config.Translate) []string {
+	if !cfg.Enabled {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, language := range cfg.Keys {
+		language = strings.TrimSpace(language)
+		if language == "" || seen[language] {
+			continue
+		}
+		seen[language] = true
+		out = append(out, language)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func seconds(value, fallback float64) time.Duration {
@@ -241,11 +319,12 @@ const orphanRetries = 40
 // page es el HTML que Chrome va a correr, con el idioma ya adentro.
 func (c *Chrome) page() string {
 	lang, _ := json.Marshal(c.language)
+	cierre, _ := json.Marshal(c.browserWS())
 	retries := c.orphanRetries
 	if retries <= 0 {
 		retries = orphanRetries
 	}
-	return fmt.Sprintf(chromePage, lang, retries)
+	return fmt.Sprintf(chromePage, lang, cierre, retries)
 }
 
 func closed(ch chan struct{}) bool {
@@ -296,7 +375,25 @@ func (c *Chrome) Load() error {
 	if failure != "" {
 		return errf("%s", explain(failure))
 	}
+	c.warmOnce.Do(c.warmTranslator)
 	return nil
+}
+
+// warmTranslator deja las pestañas del traductor listas antes de que hagan
+// falta, sin hacer esperar a nadie.
+func (c *Chrome) warmTranslator() {
+	if c.translateMode == "api" || len(c.translateLangs) == 0 {
+		return
+	}
+	go func() {
+		web, err := c.translator()
+		if err != nil {
+			c.log("no pude preparar el traductor: %v", err)
+			return
+		}
+		web.Warm(c.translateLangs)
+		c.log("traductor listo para %s", strings.Join(c.translateLangs, ", "))
+	}()
 }
 
 func explain(code string) string {
@@ -331,6 +428,19 @@ func (c *Chrome) startServer() error {
 			_, _ = w.Write([]byte("noop"))
 		case <-r.Context().Done():
 		}
+	})
+	// El pulso, para las pestañas del traductor. Va con CORS abierto porque lo
+	// pregunta una página de Google, que es de otro origen: es un 200 vacío y
+	// no dice nada de nadie.
+	mux.HandleFunc("/alive", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.WriteHeader(http.StatusOK)
+	})
+	// Con qué dirección se le pide al navegador que se cierre entero. La página
+	// la pide una vez, al arrancar, y se la guarda para cuando el dictador ya no
+	// esté para contestar.
+	mux.HandleFunc("/browser-ws", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(c.browserWS()))
 	})
 	mux.HandleFunc("/event", func(w http.ResponseWriter, r *http.Request) {
 		var payload struct {
@@ -373,6 +483,15 @@ func (c *Chrome) launch() error {
 
 	args := []string{
 		"--disable-gpu",
+		// Google mira el User-Agent para decidir qué traductor te da: al que
+		// dice HeadlessChrome le sirve el modelo viejo, el que traduce palabra
+		// por palabra. Con el User-Agent de un Chrome normal —mismo binario,
+		// sigue siendo headless— aparece el que traduce por sentido.
+		"--user-agent=" + BrowserUserAgent(c.binary),
+		// Y el idioma del navegador es el tuyo, no el que Chrome trae de
+		// fábrica: con la interfaz en inglés, Google sirve el traductor viejo.
+		"--lang=" + c.language,
+		"--accept-lang=" + c.language,
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--disable-extensions",
@@ -380,11 +499,44 @@ func (c *Chrome) launch() error {
 		// El permiso de micrófono se autoacepta: la página es nuestra y no hay
 		// nadie para clickear el diálogo.
 		"--use-fake-ui-for-media-stream",
-		fmt.Sprintf("http://127.0.0.1:%d/", c.listener.Addr().(*net.TCPAddr).Port),
+	}
+	// El puerto por el que se maneja Chrome se abre sólo si la traducción va a
+	// salir de la página de Google: es lo único que lo necesita, y mientras
+	// está abierto cualquier programa de esta máquina puede manejar ese Chrome.
+	// Sin traducción por página, ni se abre.
+	port := 0
+	if c.translateMode != "api" {
+		free, err := freePort()
+		if err != nil {
+			return errf("no pude reservar el puerto para manejar Chrome: %v", err)
+		}
+		port = free
+		args = append(args,
+			// El número lo ponemos nosotros. Pedirle a Chrome que lo elija él
+			// —el clásico puerto 0— le dice al navegador que lo están
+			// automatizando: prende navigator.webdriver, Google lo ve y te
+			// sirve el traductor viejo, el que traduce palabra por palabra.
+			"--remote-debugging-port="+strconv.Itoa(port),
+			// Y que acepte que le hable la página del dictado, que es la que le
+			// va a pedir que se cierre si el dictador se muere. Sólo esa
+			// dirección: cualquier otra página que abra sigue sin poder
+			// manejarlo.
+			"--remote-allow-origins="+fmt.Sprintf("http://127.0.0.1:%d",
+				c.listener.Addr().(*net.TCPAddr).Port),
+			// La página del traductor vive en una pestaña de atrás, y a las
+			// pestañas de atrás Chrome les frena los temporizadores para
+			// ahorrar batería: la traducción tardaba y no llegaba nunca.
+			"--disable-background-timer-throttling",
+			"--disable-backgrounding-occluded-windows",
+			"--disable-renderer-backgrounding",
+		)
 	}
 	if c.headless {
 		args = append([]string{"--headless=new"}, args...)
 	}
+	// La página del dictado va última, que es donde Chrome espera la dirección
+	// que tiene que abrir.
+	args = append(args, fmt.Sprintf("http://127.0.0.1:%d/", c.listener.Addr().(*net.TCPAddr).Port))
 	cmd := exec.Command(c.binary, args...)
 	cmd.Env = os.Environ()
 	if c.source != "" {
@@ -402,7 +554,79 @@ func (c *Chrome) launch() error {
 	exited := make(chan struct{})
 	c.proc, c.exited = cmd, exited
 	go func() { _ = cmd.Wait(); close(exited) }()
+	c.debugPort = port
+	c.web = nil
 	return nil
+}
+
+// freePort pide un puerto libre de loopback y lo suelta enseguida.
+//
+// Entre soltarlo y que Chrome lo tome hay una rendija por la que otro programa
+// podría meterse. Es la misma rendija que tiene cualquier programa que reserva
+// un puerto así, y el precio de cerrarla —dejarle elegir a Chrome— es la
+// traducción mala: entre las dos, esta.
+func freePort() (int, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer listener.Close()
+	return listener.Addr().(*net.TCPAddr).Port, nil
+}
+
+// devToolsPort lee el puerto que Chrome eligió para DevTools.
+//
+// Lo escribe en la primera línea de DevToolsActivePort apenas está listo, y
+// tarda un momento en aparecer: es lo primero que hace y no lo último, así que
+// esperar de a poco alcanza.
+func devToolsPort(profile string, wait time.Duration) (int, error) {
+	deadline := time.Now().Add(wait)
+	path := filepath.Join(profile, "DevToolsActivePort")
+	for {
+		raw, err := os.ReadFile(path)
+		if err == nil {
+			line, _, _ := strings.Cut(string(raw), "\n")
+			if port, err := strconv.Atoi(strings.TrimSpace(line)); err == nil && port > 0 {
+				return port, nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return 0, errf("Chrome no dijo por qué puerto se lo maneja")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// chromeVersion pregunta la versión al binario: "Google Chrome 150.0.7871.186".
+func chromeVersion(binary string) string {
+	if binary == "" {
+		return ""
+	}
+	out, err := exec.Command(binary, "--version").Output()
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[len(fields)-1]
+}
+
+// fallbackVersion es la que se usa si el binario no contesta su versión. Que
+// esté un poco atrasada no cambia nada: lo que importa es que no diga
+// "HeadlessChrome".
+const fallbackVersion = "140.0.0.0"
+
+// BrowserUserAgent arma el User-Agent de un Chrome de escritorio con la versión
+// del Chrome que tenemos.
+func BrowserUserAgent(binary string) string {
+	version := chromeVersion(binary)
+	if version == "" {
+		version = fallbackVersion
+	}
+	return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
+		"Chrome/" + version + " Safari/537.36"
 }
 
 // onEvent recibe lo que la página cuenta: ready, partial, final o error.
@@ -526,6 +750,43 @@ func (c *Chrome) Transcribe(_ []float32, partial bool) (string, error) {
 	return c.FinishLive()
 }
 
+// browserWS es la dirección con la que se le pide al navegador que se cierre.
+//
+// La da el propio Chrome en /json/version, y sólo sirve desde una página que
+// Chrome tenga permitida: por eso al lanzarlo se le dice que acepte la nuestra.
+func (c *Chrome) browserWS() string {
+	c.mu.Lock()
+	port := c.debugPort
+	c.mu.Unlock()
+	if port == 0 {
+		return ""
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	res, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/json/version", port))
+	if err != nil {
+		return ""
+	}
+	defer res.Body.Close()
+	var version struct {
+		WebSocket string `json:"webSocketDebuggerUrl"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&version); err != nil {
+		return ""
+	}
+	return version.WebSocket
+}
+
+// aliveURL es el pulso que las pestañas del traductor miran para saber si el
+// dictador sigue vivo.
+func (c *Chrome) aliveURL() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.listener == nil {
+		return ""
+	}
+	return fmt.Sprintf("http://127.0.0.1:%d/alive", c.listener.Addr().(*net.TCPAddr).Port)
+}
+
 // translationResult es lo que vuelve de la página por una traducción pedida.
 type translationResult struct {
 	text string
@@ -549,6 +810,17 @@ func (c *Chrome) Translate(text, target string) (Translation, error) {
 	// del Chrome que se cerró solo por quedarse huérfano.
 	if err := c.Load(); err != nil {
 		return Translation{}, err
+	}
+
+	// La página de Google traduce mejor que el endpoint, y cuando no está
+	// disponible el endpoint sigue estando: un dictado nunca se queda sin
+	// traducir por culpa de una pestaña que no abrió.
+	if c.translateMode != "api" {
+		text, err := c.translateOnWeb(text, target)
+		if err == nil {
+			return Translation{Text: text, Web: true}, nil
+		}
+		c.log("la página del traductor no anduvo (%v); voy por el endpoint", err)
 	}
 
 	id := c.newJobID()
@@ -587,6 +859,57 @@ func (c *Chrome) Translate(text, target string) (Translation, error) {
 	}
 }
 
+// translateOnWeb traduce usando la página de translate.google.com, que es la
+// que da la traducción por sentido.
+func (c *Chrome) translateOnWeb(text, target string) (string, error) {
+	web, err := c.translator()
+	if err != nil {
+		return "", err
+	}
+	return web.Translate(text, target)
+}
+
+// translator devuelve el manejador de la página, armándolo la primera vez.
+func (c *Chrome) translator() (*webTranslator, error) {
+	alive := c.aliveURL()
+	c.mu.Lock()
+	web, port, profile := c.web, c.debugPort, c.profile
+	timeout := c.translateTimeout
+	c.mu.Unlock()
+	if web != nil {
+		return web, nil
+	}
+	if profile == "" {
+		return nil, errf("Chrome todavía no arrancó")
+	}
+	if port == 0 {
+		port, err := devToolsPort(profile, 10*time.Second)
+		if err != nil {
+			return nil, err
+		}
+		c.mu.Lock()
+		c.debugPort = port
+		c.mu.Unlock()
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.web == nil {
+		c.web = newWebTranslator(c.debugPort, timeout, c.language, alive)
+	}
+	return c.web, nil
+}
+
+// log deja dicho lo que pasó cuando alguien está mirando.
+//
+// El motor no tiene el log del daemon a mano —se arma antes— así que esto es
+// para lo que no puede perderse en silencio: que la traducción buena falló y
+// salió la otra.
+func (c *Chrome) log(format string, args ...any) {
+	if c.verbose {
+		fmt.Printf("[dictador] "+format+"\n", args...)
+	}
+}
+
 func (c *Chrome) newJobID() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -622,8 +945,17 @@ func (c *Chrome) onTranslation(kind, id, text, from string) {
 func (c *Chrome) Close() {
 	c.mu.Lock()
 	proc, server, listener, profile, exited := c.proc, c.server, c.listener, c.profile, c.exited
-	c.proc, c.server, c.listener, c.profile = nil, nil, nil, ""
+	web := c.web
+	c.proc, c.server, c.listener, c.profile, c.web = nil, nil, nil, "", nil
+	c.debugPort = 0
 	c.mu.Unlock()
+
+	// Las pestañas del traductor se cierran antes que el navegador: si ya se
+	// murió no cuesta nada, y si sigue vivo —porque esto es un cambio de motor
+	// y no una salida— no quedan colgadas.
+	if web != nil {
+		web.Close()
+	}
 
 	if proc != nil && proc.Process != nil {
 		_ = proc.Process.Kill()

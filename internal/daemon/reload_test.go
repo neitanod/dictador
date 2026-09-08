@@ -109,3 +109,16 @@ func TestElAvisoDeReinicioSeLee(t *testing.T) {
 		t.Error("sin nada que avisar, no se molesta a nadie")
 	}
 }
+
+// Cambiar de dónde sale la traducción rearma el motor: el modo se decide
+// cuando el motor se construye, y sin rearmarlo seguirías traduciendo por el
+// camino de antes.
+func TestCambiarElModoDeTraducciónRearmaElMotor(t *testing.T) {
+	old := config.Defaults()
+	next := old
+	next.Translate.Mode = "api"
+
+	if plan := planReload(old, next); !plan.Engine {
+		t.Errorf("el plan quedó %+v", plan)
+	}
+}

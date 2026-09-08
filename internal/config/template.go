@@ -74,8 +74,17 @@ min_seconds = 0.35
 # Anda sólo con engine = "chrome", que es el que puede traducir gratis desde el
 # mismo navegador que te escucha.
 enabled = true
+# De dónde sale la traducción:
+#   web = la página de translate.google.com, la que traduce por sentido
+#         ("mañana voy a estar hecho mierda" → "tomorrow I'm going to be a
+#         wreck"). Tarda cerca de un segundo.
+#   api = el endpoint público, que traduce palabra por palabra ("...going to be
+#         shit") y contesta en trescientos milisegundos.
+# Con web, el endpoint queda igual de red: si la página no contesta, el dictado
+# se pega igual, traducido por el otro camino y con el aviso al lado.
+mode = "web"               # web | api
 preview_ms = 1200          # el ratito que se muestra antes de pegar (Esc cancela)
-timeout_s = 10             # si el traductor tarda más, se pega lo que dijiste
+timeout_s = 20             # si el traductor tarda más, se pega lo que dijiste
 
 # La letra que apretás y el idioma al que va. Códigos de Google Translate:
 # en, pt, fr, it, de, ja, zh-CN…

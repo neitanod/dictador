@@ -47,6 +47,11 @@ func planReload(old, next config.Config) reloadPlan {
 	// que cambiarlas en el archivo pide volver a resolverlas.
 	plan.Languages = old.Translate.Enabled != next.Translate.Enabled ||
 		!reflect.DeepEqual(old.Translate.Keys, next.Translate.Keys)
+	// Y de dónde sale la traducción lo decide el motor cuando se arma: cambiarlo
+	// en el archivo pide rearmarlo, o seguirías traduciendo por donde antes.
+	if old.Translate.Mode != next.Translate.Mode {
+		plan.Engine = true
+	}
 
 	if old.Hotkey.Key != next.Hotkey.Key {
 		plan.Restart = append(plan.Restart, "la tecla nueva")

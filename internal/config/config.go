@@ -97,6 +97,12 @@ type Translate struct {
 	Enabled bool `toml:"enabled"`
 	// Keys es la letra que apretás → el idioma al que se traduce.
 	Keys map[string]string `toml:"keys"`
+	// Mode es de dónde sale la traducción: "web" la pide en la página de
+	// translate.google.com, que traduce por sentido y tarda cerca de un
+	// segundo; "api" la pide en el endpoint público, que traduce palabra por
+	// palabra y contesta en trescientos milisegundos. Con "web", el endpoint
+	// queda igual de red: si la página no contesta, el dictado sale por ahí.
+	Mode string `toml:"mode"`
 	// TimeoutS es lo que se espera al traductor antes de pegar el original.
 	TimeoutS float64 `toml:"timeout_s"`
 	// PreviewMs es el ratito que la traducción se muestra en la ventanita antes
@@ -183,7 +189,8 @@ func Defaults() Config {
 		Translate: Translate{
 			Enabled:   true,
 			Keys:      DefaultTranslateKeys(),
-			TimeoutS:  10,
+			Mode:      "web",
+			TimeoutS:  20,
 			PreviewMs: 1200,
 		},
 		Overlay: Overlay{

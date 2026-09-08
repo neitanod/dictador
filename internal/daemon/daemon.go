@@ -295,7 +295,9 @@ func (d *Daemon) buildEngine() bool {
 	if d.engine != nil {
 		d.engine.Close() // el anterior puede tener un Chrome colgando
 	}
-	engine, err := stt.Build(stt.OptionsFrom(d.cfg))
+	opts := stt.OptionsFrom(d.cfg)
+	opts.Verbose = d.verbose
+	engine, err := stt.Build(opts)
 	if err != nil {
 		d.engine, d.engErr = nil, err.Error()
 		return false
@@ -499,6 +501,7 @@ func (d *Daemon) applySettings(values webconfig.Values) {
 	d.cfg.Commands.Replacements = values.Replacements
 	d.cfg.Action.TrailingSpace = values.TrailingSpace
 	d.cfg.Translate.Enabled = values.Translate
+	d.cfg.Translate.Mode = values.TranslateMode
 	d.cfg.Translate.Keys = values.TranslateKeys
 	// Dónde aparece la ventanita se cambia sin reiniciar nada: la próxima vez
 	// que dictes ya aparece donde la mandaste.
@@ -788,9 +791,14 @@ func dictate(engine stt.Engine, samples []float32, ready bool, language string,
 		log("la traducción falló: " + err.Error())
 		return append(avisos, result{text: text, warn: "sin traducir: " + reason(err)})
 	}
-	return append(avisos, result{
-		text: translated.Text, language: language, from: translated.From,
-	})
+	res := result{text: translated.Text, language: language, from: translated.From}
+	if !translated.Web {
+		// La traducción buena sale de la página de Google; ésta salió del
+		// endpoint, que traduce más literal. Decirlo evita el rato de creer que
+		// el traductor empeoró sin motivo.
+		res.warn = "traducción literal: la página de Google no contestó"
+	}
+	return append(avisos, res)
 }
 
 // translateText traduce con el motor, si es de los que saben.

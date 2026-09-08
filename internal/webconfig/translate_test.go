@@ -176,3 +176,47 @@ func TestGuardarLeAvisaAlDaemonConLaTablaEntera(t *testing.T) {
 		t.Fatal("el daemon no se enteró de nada")
 	}
 }
+
+// El modo se guarda y viaja al daemon: es la diferencia entre traducir por
+// sentido y traducir palabra por palabra.
+func TestElModoDeTraducciónSeGuarda(t *testing.T) {
+	s, path := serverConTraducción(t, "chrome")
+
+	if code, answer := guardar(t, s, map[string]any{
+		"engine":         "chrome",
+		"translate":      true,
+		"translate_mode": "api",
+		"translate_keys": map[string]string{"e": "en"},
+	}); code != http.StatusOK {
+		t.Fatalf("esperaba 200, vino %d: %v", code, answer)
+	}
+
+	next, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("el config quedó ilegible: %v", err)
+	}
+	if next.Translate.Mode != "api" {
+		t.Errorf("quedó en %q", next.Translate.Mode)
+	}
+	select {
+	case values := <-s.Saved():
+		if values.TranslateMode != "api" {
+			t.Errorf("al daemon le llegó %q", values.TranslateMode)
+		}
+	default:
+		t.Fatal("el daemon no se enteró")
+	}
+}
+
+// Cualquier otra cosa cae en el modo que traduce mejor: un valor raro en el
+// archivo no puede dejarte con la traducción literal sin que lo hayas pedido.
+func TestUnModoRaroCaeEnElQueTraduceMejor(t *testing.T) {
+	for _, raro := range []string{"", "  ", "página", "WEB"} {
+		if got := translateMode(raro); got != "web" {
+			t.Errorf("translateMode(%q) = %q", raro, got)
+		}
+	}
+	if got := translateMode(" API "); got != "api" {
+		t.Errorf("translateMode(\" API \") = %q", got)
+	}
+}
