@@ -228,8 +228,10 @@ func (d *Daemon) watchLanguageKeys() {
 	}
 	if !d.translationEnabled() {
 		d.listener.WatchLanguages(nil)
+		d.listener.SetSticky(false)
 		return
 	}
+	d.listener.SetSticky(d.cfg.Translate.Sticky)
 	for _, err := range d.listener.WatchLanguages(d.cfg.Translate.Keys) {
 		d.log(err.Error())
 	}
@@ -507,6 +509,7 @@ func (d *Daemon) applySettings(values webconfig.Values) {
 	d.cfg.Action.TrailingSpace = values.TrailingSpace
 	d.cfg.Translate.Enabled = values.Translate
 	d.cfg.Translate.Mode = values.TranslateMode
+	d.cfg.Translate.Sticky = values.TranslateSticky
 	d.cfg.Translate.Keys = values.TranslateKeys
 	// Dónde aparece la ventanita se cambia sin reiniciar nada: la próxima vez
 	// que dictes ya aparece donde la mandaste.

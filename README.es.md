@@ -277,9 +277,15 @@ haber decidido nada y tocarla sobre el final, o arrepentirte a mitad de la frase
 y volver a tocarla. Mientras dictás, la ventanita muestra a dónde va
 —"Escuchando · sale en inglés"— así no queda a ciegas.
 
-**Cada dictado arranca sin idioma.** Lo que elegiste en el anterior no se
-arrastra: un dictado que sale traducido sin que nadie lo pidiera se descubre
-después de pegarlo.
+**Cada dictado arranca sin idioma**, salvo que le digas lo contrario. Lo que
+elegiste en el anterior no se arrastra, porque un dictado que sale traducido sin
+que nadie lo pidiera se descubre después de pegarlo.
+
+Para una conversación entera en otro idioma eso cansa, así que hay un tilde
+—`translate.sticky`— que deja el idioma puesto: tocás la letra una vez y los
+dictados que siguen salen igual, hasta que la toques de nuevo. Con el pegajoso
+prendido la ventanita lo dice desde el "Escuchando", para que no dictes creyendo
+que va en castellano.
 
 ![La ventanita mientras dictás para traducir](docs/overlay-traduciendo.png)
 
@@ -364,11 +370,18 @@ la página, y Chrome la acepta porque al arrancarlo se le dice que confíe en es
 origen y en ninguno más.
 
 **Lo que hay que saber del puerto:** mientras el dictado anda, ese Chrome queda
-escuchando en un puerto de loopback por el que se lo puede manejar entero. Es un
-Chrome dedicado, sin tus sesiones ni tus cookies, y el puerto no sale de la
-máquina; pero cualquier programa que corra en tu usuario puede hablarle. Si eso
-te incomoda, `translate.mode = "api"` no abre ningún puerto: se pierde la
-traducción por sentido y queda la literal.
+escuchando en un puerto de loopback por el que se lo puede manejar entero, y el
+protocolo **no tiene autenticación de ninguna clase**. Medido: un programa
+cualquiera corriendo en tu usuario se conecta sin nada y puede leer y manejar
+las pestañas. El `--remote-allow-origins` de más arriba sólo filtra a los que
+declaran venir de una página web —eso sí queda afuera—, y un programa nativo no
+declara nada.
+
+Lo que sí achica la exposición: es un Chrome dedicado sin tus sesiones ni tus
+cookies, el puerto no sale de la máquina, el número cambia en cada arranque, y
+existe sólo mientras la traducción por página está prendida. Con
+`translate.mode = "api"` no se abre ningún puerto: se pierde la traducción por
+sentido y queda la literal.
 
 Por eso la traducción no sale de una API sino de la página: se escribe en el
 cuadro de la izquierda y se lee lo que aparece a la derecha, que es exactamente
@@ -389,6 +402,7 @@ O en el archivo:
 [translate]
 enabled = true
 mode = "web"               # web = como translate.google.com | api = el endpoint
+sticky = false             # true = el idioma queda puesto para el dictado siguiente
 preview_ms = 1200          # el ratito que se muestra antes de pegar
 timeout_s = 20             # si el traductor tarda más, se pega lo que dijiste
 
@@ -584,6 +598,7 @@ enabled = true             # los comandos hablados: "coma", "entre corchetes"…
 [translate]
 enabled = true             # traducir según la letra que toques mientras hablás
 mode = "web"               # web = como translate.google.com | api = el endpoint
+sticky = false             # el idioma queda puesto para el dictado siguiente
 preview_ms = 1200          # el ratito para leerla y cancelar con Esc
 timeout_s = 20
 

@@ -95,13 +95,14 @@ type langTracker struct {
 
 func newLangTracker() *langTracker { return &langTracker{} }
 
-// reset borra lo elegido: arranca un dictado nuevo.
+// reset arranca un dictado nuevo con el idioma que le digan.
 //
-// Cada dictado empieza sin idioma a propósito. Arrastrar el del anterior haría
-// que un dictado saliera traducido sin que nadie lo pidiera, y eso se descubre
-// después de pegarlo.
-func (t *langTracker) reset() {
-	t.elegido = LanguageKey{}
+// Con el idioma pegajoso apagado eso es "ninguno", y hay que tocar la letra en
+// cada dictado: un dictado que sale traducido sin que nadie lo pidiera se
+// descubre después de pegarlo. Con el pegajoso prendido arranca con el último,
+// que es lo que sirve para una conversación entera en otro idioma.
+func (t *langTracker) reset(inicial LanguageKey) {
+	t.elegido = inicial
 }
 
 // press es un toque de una tecla de idioma: prende, apaga o cambia.

@@ -46,6 +46,7 @@ func planReload(old, next config.Config) reloadPlan {
 	// Las letras que eligen idioma se resuelven contra el teclado una vez, así
 	// que cambiarlas en el archivo pide volver a resolverlas.
 	plan.Languages = old.Translate.Enabled != next.Translate.Enabled ||
+		old.Translate.Sticky != next.Translate.Sticky ||
 		!reflect.DeepEqual(old.Translate.Keys, next.Translate.Keys)
 	// Y de dónde sale la traducción lo decide el motor cuando se arma: cambiarlo
 	// en el archivo pide rearmarlo, o seguirías traduciendo por donde antes.

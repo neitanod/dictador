@@ -220,3 +220,34 @@ func TestUnModoRaroCaeEnElQueTraduceMejor(t *testing.T) {
 		t.Errorf("translateMode(\" API \") = %q", got)
 	}
 }
+
+// El idioma pegajoso se guarda y le llega al daemon: es lo que decide si la
+// conversación entera sale traducida o hay que tocar la letra en cada frase.
+func TestElIdiomaPegajosoSeGuarda(t *testing.T) {
+	s, path := serverConTraducción(t, "chrome")
+
+	if code, answer := guardar(t, s, map[string]any{
+		"engine":           "chrome",
+		"translate":        true,
+		"translate_sticky": true,
+		"translate_keys":   map[string]string{"p": "pt"},
+	}); code != http.StatusOK {
+		t.Fatalf("esperaba 200, vino %d: %v", code, answer)
+	}
+
+	next, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("el config quedó ilegible: %v", err)
+	}
+	if !next.Translate.Sticky {
+		t.Error("el idioma pegajoso tendría que haber quedado prendido")
+	}
+	select {
+	case values := <-s.Saved():
+		if !values.TranslateSticky {
+			t.Error("al daemon no le llegó el idioma pegajoso")
+		}
+	default:
+		t.Fatal("el daemon no se enteró")
+	}
+}

@@ -97,6 +97,14 @@ type Translate struct {
 	Enabled bool `toml:"enabled"`
 	// Keys es la letra que tocás → el idioma al que se traduce.
 	Keys map[string]string `toml:"keys"`
+	// Sticky deja el idioma puesto para el dictado siguiente.
+	//
+	// Apagado, cada dictado arranca sin idioma y hay que tocar la letra cada
+	// vez: es lo seguro, porque un dictado que sale traducido sin que nadie lo
+	// pidiera se descubre después de pegarlo. Prendido, la letra se toca una vez
+	// por conversación, que es lo que uno quiere cuando está chateando un rato
+	// entero con alguien que habla otro idioma.
+	Sticky bool `toml:"sticky"`
 	// Mode es de dónde sale la traducción: "web" la pide en la página de
 	// translate.google.com, que traduce por sentido y tarda cerca de un
 	// segundo; "api" la pide en el endpoint público, que traduce palabra por

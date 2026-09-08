@@ -211,6 +211,9 @@ func describeTranslation(cfg config.Config, keymap *x11.Keymap) string {
 	} else {
 		detail += " · por la página de Google (traduce por sentido)"
 	}
+	if cfg.Translate.Sticky {
+		detail += " · el idioma queda puesto para el dictado siguiente"
+	}
 	if missing := missingLanguageKeys(cfg, keymap); len(missing) > 0 {
 		detail += " · tu teclado no tiene " + strings.Join(missing, ", ")
 	}

@@ -286,9 +286,15 @@ start talking without having decided anything and tap it near the end, or change
 your mind mid-sentence and tap it again. While you dictate, the overlay shows
 where it is headed — "Escuchando · sale en inglés" — so it is never blind.
 
-**Every dictation starts with no language.** Whatever you picked last time does
-not carry over: a dictation that comes out translated without anyone asking is
-discovered after it is pasted.
+**Every dictation starts with no language**, unless you say otherwise. Whatever
+you picked last time does not carry over, because a dictation that comes out
+translated without anyone asking is discovered after it is pasted.
+
+For a whole conversation in another language that gets tiring, so there is a
+switch — `translate.sticky` — that keeps the language on: tap the letter once
+and the dictations that follow come out the same, until you tap it again. With
+sticky on, the overlay says so from the start, so you never dictate thinking it
+is going out in Spanish.
 
 ![The overlay while dictating to translate](docs/overlay-traduciendo.png)
 
@@ -371,10 +377,16 @@ for asking comes embedded in the page, and Chrome accepts it because at launch
 it is told to trust that origin and no other.
 
 **What to know about that port:** while dictation runs, that Chrome listens on a
-loopback port through which it can be driven entirely. It is a dedicated Chrome,
-with none of your sessions or cookies, and the port never leaves the machine —
-but any program running as your user can talk to it. If that bothers you,
-`translate.mode = "api"` opens no port at all: you lose the meaning-aware
+loopback port through which it can be driven entirely, and the protocol **has no
+authentication of any kind**. Measured: any program running as your user
+connects with nothing and can read and drive the tabs. The
+`--remote-allow-origins` above only filters those declaring they come from a web
+page — those do get turned away — and a native program declares nothing.
+
+What does shrink the exposure: it is a dedicated Chrome with none of your
+sessions or cookies, the port never leaves the machine, the number changes on
+every launch, and it exists only while page translation is on. With
+`translate.mode = "api"` no port is opened at all: you lose the meaning-aware
 translation and keep the literal one.
 
 That is why the translation comes from the page and not from an API: text goes
@@ -396,6 +408,7 @@ Or in the file:
 [translate]
 enabled = true
 mode = "web"               # web = like translate.google.com | api = the endpoint
+sticky = false             # true = the language stays on for the next dictation
 preview_ms = 1200          # how long it shows before pasting
 timeout_s = 20             # if the translator takes longer, your words go in
 
@@ -592,6 +605,7 @@ enabled = true             # spoken commands: "coma", "entre corchetes"…
 [translate]
 enabled = true             # translate based on the letter you tap while talking
 mode = "web"               # web = like translate.google.com | api = the endpoint
+sticky = false             # the language stays on for the next dictation
 preview_ms = 1200          # the moment to read it and cancel with Esc
 timeout_s = 20
 

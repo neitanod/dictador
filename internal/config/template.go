@@ -83,6 +83,10 @@ enabled = true
 # Con web, el endpoint queda igual de red: si la página no contesta, el dictado
 # se pega igual, traducido por el otro camino y con el aviso al lado.
 mode = "web"               # web | api
+# Con sticky = true el idioma queda puesto para el dictado siguiente: tocás la
+# letra una vez y la conversación entera sale traducida, hasta que la toques de
+# nuevo. En false, cada dictado arranca sin idioma.
+sticky = false
 preview_ms = 1200          # el ratito que se muestra antes de pegar (Esc cancela)
 timeout_s = 20             # si el traductor tarda más, se pega lo que dijiste
 

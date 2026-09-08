@@ -59,6 +59,8 @@ type Values struct {
 	TranslateKeys map[string]string `json:"translate_keys"`
 	// TranslateMode es de dónde sale la traducción: "web" o "api".
 	TranslateMode string `json:"translate_mode"`
+	// TranslateSticky deja el idioma puesto para el dictado siguiente.
+	TranslateSticky bool `json:"translate_sticky"`
 }
 
 // Server sirve la página y avisa cuando se guarda.
@@ -357,27 +359,28 @@ type option struct {
 
 // view es lo que la plantilla necesita saber.
 type view struct {
-	Engine         string
-	WhisperOK      bool
-	WhisperDetail  string
-	ChromeOK       bool
-	ChromeDetail   string
-	GoogleAPIKey   string
-	Language       string
-	KeyFromEnv     bool
-	HotkeyLabel    string
-	ConfigPath     string
-	WhisperCommand string
-	Screens        []option
-	Positions      []option
-	Monitors       []x11.Monitor
-	Commands       bool
-	CommandCount   int
-	TrailingSpace  bool
-	Translate      bool
-	TranslateWeb   bool
-	TranslateKeys  []translate.Binding
-	Languages      []translate.Language
+	Engine          string
+	WhisperOK       bool
+	WhisperDetail   string
+	ChromeOK        bool
+	ChromeDetail    string
+	GoogleAPIKey    string
+	Language        string
+	KeyFromEnv      bool
+	HotkeyLabel     string
+	ConfigPath      string
+	WhisperCommand  string
+	Screens         []option
+	Positions       []option
+	Monitors        []x11.Monitor
+	Commands        bool
+	CommandCount    int
+	TrailingSpace   bool
+	Translate       bool
+	TranslateWeb    bool
+	TranslateSticky bool
+	TranslateKeys   []translate.Binding
+	Languages       []translate.Language
 	// CanTranslate es si el motor elegido sabe traducir. Con los otros la
 	// sección se muestra igual, apagada y diciendo por qué.
 	CanTranslate bool
@@ -405,14 +408,15 @@ func (s *Server) snapshot() view {
 		ConfigPath:  cfg.Path,
 		WhisperCommand: "whisper-server -m models/ggml-" + orElse(cfg.STT.Model, "small") +
 			".bin --host 127.0.0.1 --port 8080",
-		Commands:      cfg.Commands.Enabled,
-		CommandCount:  len(commands.List(commands.OptionsFrom(cfg))),
-		TrailingSpace: cfg.Action.TrailingSpace,
-		Translate:     cfg.Translate.Enabled,
-		TranslateWeb:  !strings.EqualFold(strings.TrimSpace(cfg.Translate.Mode), "api"),
-		TranslateKeys: translate.Bindings(cfg.Translate.Keys),
-		Languages:     translate.Languages,
-		CanTranslate:  stt.TranslatorEngines[engine],
+		Commands:        cfg.Commands.Enabled,
+		CommandCount:    len(commands.List(commands.OptionsFrom(cfg))),
+		TrailingSpace:   cfg.Action.TrailingSpace,
+		Translate:       cfg.Translate.Enabled,
+		TranslateWeb:    !strings.EqualFold(strings.TrimSpace(cfg.Translate.Mode), "api"),
+		TranslateSticky: cfg.Translate.Sticky,
+		TranslateKeys:   translate.Bindings(cfg.Translate.Keys),
+		Languages:       translate.Languages,
+		CanTranslate:    stt.TranslatorEngines[engine],
 	}
 	if whisperOK {
 		v.WhisperDetail = "hay un whisper-server contestando en " + cfg.STT.WhisperServerURL
@@ -571,6 +575,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		{Section: "action", Key: "trailing_space", Value: values.TrailingSpace},
 		{Section: "translate", Key: "enabled", Value: values.Translate},
 		{Section: "translate", Key: "mode", Value: translateMode(values.TranslateMode)},
+		{Section: "translate", Key: "sticky", Value: values.TranslateSticky},
 	}
 	if !s.snapshot().KeyFromEnv {
 		settings = append(settings,
@@ -601,6 +606,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	cfg.Action.TrailingSpace = values.TrailingSpace
 	cfg.Translate.Enabled = values.Translate
 	cfg.Translate.Mode = translateMode(values.TranslateMode)
+	cfg.Translate.Sticky = values.TranslateSticky
 	cfg.Translate.Keys = keys
 	if !s.snapshot().KeyFromEnv {
 		cfg.STT.GoogleAPIKey = strings.TrimSpace(values.GoogleAPIKey)
@@ -611,18 +617,19 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	out := Values{
-		Engine:         stored,
-		GoogleAPIKey:   cfg.STT.GoogleAPIKey,
-		GoogleLanguage: locale,
-		ChromeLanguage: locale,
-		Screen:         screen,
-		Position:       position,
-		Commands:       values.Commands,
-		TrailingSpace:  values.TrailingSpace,
-		Replacements:   cfg.Commands.Replacements,
-		Translate:      values.Translate,
-		TranslateMode:  translateMode(values.TranslateMode),
-		TranslateKeys:  keys,
+		Engine:          stored,
+		GoogleAPIKey:    cfg.STT.GoogleAPIKey,
+		GoogleLanguage:  locale,
+		ChromeLanguage:  locale,
+		Screen:          screen,
+		Position:        position,
+		Commands:        values.Commands,
+		TrailingSpace:   values.TrailingSpace,
+		Replacements:    cfg.Commands.Replacements,
+		Translate:       values.Translate,
+		TranslateMode:   translateMode(values.TranslateMode),
+		TranslateSticky: values.TranslateSticky,
+		TranslateKeys:   keys,
 	}
 	s.notify(out)
 	replyJSON(w, http.StatusOK, map[string]any{"ok": true, "engine": stored, "path": path})
@@ -695,18 +702,19 @@ func (s *Server) saveCommands(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	s.notify(Values{
-		Engine:         cfg.STT.Engine,
-		GoogleAPIKey:   cfg.STT.GoogleAPIKey,
-		GoogleLanguage: cfg.STT.GoogleLanguage,
-		ChromeLanguage: cfg.STT.ChromeLanguage,
-		Screen:         cfg.Overlay.Screen,
-		Position:       cfg.Overlay.Position,
-		Commands:       cfg.Commands.Enabled,
-		TrailingSpace:  cfg.Action.TrailingSpace,
-		Replacements:   replacements,
-		Translate:      cfg.Translate.Enabled,
-		TranslateMode:  cfg.Translate.Mode,
-		TranslateKeys:  cfg.Translate.Keys,
+		Engine:          cfg.STT.Engine,
+		GoogleAPIKey:    cfg.STT.GoogleAPIKey,
+		GoogleLanguage:  cfg.STT.GoogleLanguage,
+		ChromeLanguage:  cfg.STT.ChromeLanguage,
+		Screen:          cfg.Overlay.Screen,
+		Position:        cfg.Overlay.Position,
+		Commands:        cfg.Commands.Enabled,
+		TrailingSpace:   cfg.Action.TrailingSpace,
+		Replacements:    replacements,
+		Translate:       cfg.Translate.Enabled,
+		TranslateMode:   cfg.Translate.Mode,
+		TranslateSticky: cfg.Translate.Sticky,
+		TranslateKeys:   cfg.Translate.Keys,
 	})
 	replyJSON(w, http.StatusOK, map[string]any{
 		"ok":      true,

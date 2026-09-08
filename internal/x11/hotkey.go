@@ -163,6 +163,11 @@ type Listener struct {
 	// release es la tecla de idioma que estaba en juego al soltar el combo, que
 	// es la que decide el idioma del dictado que se acaba de terminar.
 	release LanguageKey
+	// sticky deja el idioma puesto para el dictado siguiente, y ultimo es ese
+	// idioma. Vive acá y no en el daemon porque el dictado nuevo arranca en
+	// este lado, cuando llega el press, antes de que el daemon se entere.
+	sticky  bool
+	ultimo  LanguageKey
 	grabbed []int
 	hints   chan LanguageKey
 }
@@ -225,7 +230,10 @@ func (l *Listener) WatchLanguages(table map[string]string) []error {
 	l.mu.Lock()
 	l.langs = keys
 	l.tracker.keys = keys
-	l.tracker.reset()
+	// La tabla nueva puede no tener el idioma que venía pegado, así que se
+	// arranca de cero: es un cambio de configuración, no un dictado.
+	l.ultimo = LanguageKey{}
+	l.tracker.reset(LanguageKey{})
 	l.mu.Unlock()
 	return problems
 }
@@ -408,14 +416,40 @@ func (l *Listener) rememberLanguage() {
 		key = LanguageKey{}
 	}
 	l.release = key
+	if l.sticky {
+		l.ultimo = key
+	}
 }
 
-// startLanguages arranca un dictado con la cuenta de teclas de idioma en cero:
-// lo que hayas apretado antes de empezar a hablar no elige nada.
+// startLanguages arranca un dictado: sin idioma, o con el de la vez pasada si
+// el idioma es pegajoso.
 func (l *Listener) startLanguages() {
 	l.mu.Lock()
-	l.tracker.reset()
-	l.release = LanguageKey{}
+	inicial := LanguageKey{}
+	if l.sticky {
+		inicial = l.ultimo
+	}
+	l.tracker.reset(inicial)
+	l.release = inicial
+	l.mu.Unlock()
+	// Si arranca con idioma puesto, la ventanita tiene que decirlo desde el
+	// principio: con el pegajoso prendido, lo peligroso es dictar creyendo que
+	// va en castellano.
+	if inicial.Language != "" {
+		select {
+		case l.hints <- inicial:
+		default:
+		}
+	}
+}
+
+// SetSticky dice si el idioma se queda puesto para el dictado siguiente.
+func (l *Listener) SetSticky(sticky bool) {
+	l.mu.Lock()
+	l.sticky = sticky
+	if !sticky {
+		l.ultimo = LanguageKey{}
+	}
 	l.mu.Unlock()
 }
 

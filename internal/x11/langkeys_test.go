@@ -120,13 +120,14 @@ func TestSinTocarNadaNoSeTraduce(t *testing.T) {
 	}
 }
 
-// Lo que elegiste en el dictado anterior no puede colarse en el que sigue:
-// pegar traducido sin querer se descubre después de pegarlo.
+// Lo que elegiste en el dictado anterior no puede colarse en el que sigue, si
+// el idioma pegajoso está apagado: pegar traducido sin querer se descubre
+// después de pegarlo.
 func TestCadaDictadoArrancaSinIdioma(t *testing.T) {
 	tracker := trackerConTeclas(t)
 	tracker.press(26, false)
 
-	tracker.reset()
+	tracker.reset(LanguageKey{})
 
 	if got := idioma(tracker); got != "" {
 		t.Fatalf("quería nada, dio %q", got)
@@ -134,6 +135,24 @@ func TestCadaDictadoArrancaSinIdioma(t *testing.T) {
 	tracker.press(26, false)
 	if got := idioma(tracker); got != "en" {
 		t.Fatalf("quería inglés, dio %q", got)
+	}
+}
+
+// Con el idioma pegajoso, el dictado arranca donde quedó el anterior, y la
+// letra sigue funcionando igual: un toque lo apaga.
+func TestConElIdiomaPegajosoElDictadoArrancaDondeQuedó(t *testing.T) {
+	tracker := trackerConTeclas(t)
+	tracker.press(33, false) // portugués
+
+	elegido, _ := tracker.current()
+	tracker.reset(elegido) // el dictado siguiente, con el pegajoso prendido
+
+	if got := idioma(tracker); got != "pt" {
+		t.Fatalf("quería portugués, dio %q", got)
+	}
+	tracker.press(33, false)
+	if got := idioma(tracker); got != "" {
+		t.Fatalf("el toque tendría que haberlo apagado, dio %q", got)
 	}
 }
 

@@ -343,6 +343,21 @@
         </p>
       </label>
 
+      <label class="engine" style="margin-top:10px">
+        <div class="row">
+          <input type="checkbox" id="translateSticky" {{if .TranslateSticky}}checked{{end}}
+                 {{if not .CanTranslate}}disabled{{end}}>
+          <strong>Seguir con el mismo idioma en el dictado siguiente</strong>
+        </div>
+        <p class="hint">
+          Para una conversación entera en otro idioma: tocás la letra una vez y
+          los dictados que siguen salen igual, hasta que la toques de nuevo. La
+          ventanita te lo dice desde el "Escuchando", así no dictás creyendo que
+          va en castellano. Destildado, cada dictado arranca limpio y hay que
+          tocar la letra cada vez.
+        </p>
+      </label>
+
       <div class="langs{{if not .CanTranslate}} off{{end}}" id="langs"></div>
       <p class="hint" id="langsEmpty" hidden>Sin ninguna letra, no hay nada que traducir.</p>
       <button type="button" class="ghost" id="addLang" style="margin-top:12px"
@@ -914,6 +929,7 @@
         trailing_space: document.getElementById('trailing').checked,
         translate: translateOn.checked,
         translate_mode: document.getElementById('translateWeb').checked ? 'web' : 'api',
+        translate_sticky: document.getElementById('translateSticky').checked,
         translate_keys: readLangs(),
       }),
     });
