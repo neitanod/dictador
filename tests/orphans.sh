@@ -65,6 +65,12 @@ sleep 1
 export TMPDIR="$WORK/tmp"
 export XDG_CONFIG_HOME="$WORK/config"
 export XDG_STATE_HOME="$WORK/state"
+# El candado también va adentro del temporal: si no, esta prueba comparte el de
+# la sesión y el dictador que el que la corre tenga andando le gana de mano —el
+# segundo proceso se encuentra con "ya estaba andando" y no levanta ningún
+# Chrome que barrer—.
+export XDG_RUNTIME_DIR="$WORK/run"
+mkdir -p "$XDG_RUNTIME_DIR"
 export DISPLAY="$DISPLAY_NUM"
 mkdir -p "$TMPDIR" "$XDG_CONFIG_HOME/dictador"
 cat > "$XDG_CONFIG_HOME/dictador/config.toml" <<EOF
