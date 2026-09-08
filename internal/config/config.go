@@ -89,13 +89,13 @@ type Commands struct {
 
 // Translate: traducir lo dictado antes de pegarlo.
 //
-// Mientras hablás, la letra que tengas apretada al soltar la tecla del dictado
-// elige el idioma: con la "e" abajo el texto se pega en inglés. Sin ninguna
-// letra apretada, se pega como lo dijiste. Sólo anda con el motor chrome, que
-// es el que puede hablar con el traductor de Google sin API key.
+// Mientras hablás, la letra que toques elige el idioma: con un toque a la "e"
+// el texto se pega en inglés, otro toque la apaga y otra letra manda sobre la
+// anterior. Sin tocar ninguna, se pega como lo dijiste. Sólo anda con el motor
+// chrome, que es el que puede hablar con el traductor de Google sin API key.
 type Translate struct {
 	Enabled bool `toml:"enabled"`
-	// Keys es la letra que apretás → el idioma al que se traduce.
+	// Keys es la letra que tocás → el idioma al que se traduce.
 	Keys map[string]string `toml:"keys"`
 	// Mode es de dónde sale la traducción: "web" la pide en la página de
 	// translate.google.com, que traduce por sentido y tarda cerca de un

@@ -3,8 +3,8 @@
 # dictador
 
 Global push-to-talk dictation for Linux/X11, in Go. Hold a key, talk, let go, and
-the text lands wherever your cursor was. And if you were holding `e` when you let
-go, it lands in English.
+the text lands wherever your cursor was. And if you tapped `e` while talking, it
+lands in English.
 
 This is the Go rewrite of [dictado](https://github.com/neitanod/dictado), which
 is in Python and works. What changes here: a single binary with no venv, no GUI
@@ -269,26 +269,28 @@ fixing the previous word needs.
 
 ## Instant translation
 
-While you talk, hold down a letter and release it together with the dictation
-key: what you said gets pasted translated. `e` makes it English and `p` makes it
-Portuguese, and you pick both the letters and the languages.
+While you talk, tap a letter and what you said gets pasted translated. `e` makes
+it English and `p` makes it Portuguese, and you pick both the letters and the
+languages.
 
 ```
-AltGr+Control_R  ────────────────────────────────▶ pasted in Spanish
-AltGr+Control_R + e (held on release)  ──────────▶ pasted in English
-AltGr+Control_R + p (held on release)  ──────────▶ pasted in Portuguese
+AltGr+Control_R  ──────────────────────────▶ pasted in Spanish
+AltGr+Control_R, you tap e  ───────────────▶ pasted in English
+AltGr+Control_R, you tap e then e  ────────▶ pasted in Spanish again
+AltGr+Control_R, you tap e then p  ────────▶ pasted in Portuguese
 ```
 
-**What decides is whatever you are holding the instant you let go.** You can
-start talking without having decided anything and press the letter near the end;
-change your mind mid-sentence and let it go, and the text comes out as you said
-it. If you tried two, the last one wins. While you dictate, the overlay shows
+**The letter is a switch, not a button you hold down.** One tap turns it on,
+another turns it off, and a different letter overrides the previous one: you can
+start talking without having decided anything and tap it near the end, or change
+your mind mid-sentence and tap it again. While you dictate, the overlay shows
 where it is headed — "Escuchando · sale en inglés" — so it is never blind.
 
-![The overlay while dictating to translate](docs/overlay-traduciendo.png)
+**Every dictation starts with no language.** Whatever you picked last time does
+not carry over: a dictation that comes out translated without anyone asking is
+discovered after it is pasted.
 
-Letting go of everything is a single hand movement and fingers do not lift in
-sync, so a letter released up to 300 ms early still counts.
+![The overlay while dictating to translate](docs/overlay-traduciendo.png)
 
 **The letter is not typed anywhere.** While recording, those keys are held by a
 X grab: they never reach the app in front, and they never fire its shortcut —
@@ -588,13 +590,13 @@ enabled = true             # spoken commands: "coma", "entre corchetes"…
 # "dos puntos" = ":"       # yours; an empty value turns off a built-in one
 
 [translate]
-enabled = true             # translate based on the letter you are holding
+enabled = true             # translate based on the letter you tap while talking
 mode = "web"               # web = like translate.google.com | api = the endpoint
 preview_ms = 1200          # the moment to read it and cancel with Esc
 timeout_s = 20
 
 [translate.keys]
-e = "en"                   # the letter you hold → the language it goes to
+e = "en"                   # the letter you tap → the language it goes to
 p = "pt"
 ```
 
@@ -616,6 +618,13 @@ keyboard reports valuators the whole X connection turns to garbage.
 until another app grabs the keyboard and a release goes missing: that modifier
 stays marked as held forever. `QueryKeymap` says which keys are actually down,
 right now.
+
+**With the key grabbed, the release never comes back.** The letter that picks
+the language is grabbed while you dictate so it does not leak into the app in
+front, and with the grab in place X delivers the press and never the release.
+Telling a fresh tap from the repeat X sends on its own while you hold the key
+cannot be done by tracking what is pressed: it is done with the flag the event
+itself carries, saying whether a finger or the auto-repeat produced it.
 
 **The clipboard belongs to the daemon.** In X, whoever copied is the one who
 serves the content when someone pastes. The Python version left an `xclip`

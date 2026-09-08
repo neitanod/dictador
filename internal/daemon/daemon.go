@@ -426,6 +426,11 @@ func (d *Daemon) showLanguageHint(hint x11.LanguageKey) {
 		return
 	}
 	if hint.Language == "" {
+		d.log("idioma: ninguno")
+	} else {
+		d.log("idioma: " + hint.Language + " (tecla " + hint.Key + ")")
+	}
+	if hint.Language == "" {
 		d.ui.SetHint("Escuchando…")
 		return
 	}

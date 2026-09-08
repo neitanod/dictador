@@ -32,8 +32,17 @@ const (
 type RawKeyEvent struct {
 	Evtype  uint16
 	Keycode int
-	raw     []byte
+	// Flags trae, entre otras cosas, si este press es del autorrepetido de X.
+	Flags uint32
+	raw   []byte
 }
+
+// xiKeyRepeat es el bit que X prende en los press que genera él solo mientras
+// mantenés la tecla hundida.
+const xiKeyRepeat = 1 << 16
+
+// Repeat dice si este press lo generó el autorrepetido y no un dedo.
+func (e RawKeyEvent) Repeat() bool { return e.Flags&xiKeyRepeat != 0 }
 
 func (e RawKeyEvent) Bytes() []byte { return e.raw }
 func (e RawKeyEvent) String() string {
@@ -57,6 +66,7 @@ var registerRawEvents = sync.OnceFunc(func() {
 		return RawKeyEvent{
 			Evtype:  binary.LittleEndian.Uint16(buf[8:]),
 			Keycode: int(binary.LittleEndian.Uint32(buf[16:])),
+			Flags:   binary.LittleEndian.Uint32(buf[24:]),
 			raw:     buf,
 		}
 	}
@@ -371,13 +381,11 @@ func (l *Listener) trackLanguage(raw RawKeyEvent) bool {
 		l.mu.Unlock()
 		return false
 	}
-	before := l.tracker.live()
+	before, _ := l.tracker.current()
 	if raw.Evtype == xiRawKeyPress {
-		l.tracker.press(raw.Keycode)
-	} else {
-		l.tracker.release(raw.Keycode)
+		l.tracker.press(raw.Keycode, raw.Repeat())
 	}
-	after := l.tracker.live()
+	after, _ := l.tracker.current()
 	engaged := l.engaged
 	l.mu.Unlock()
 
@@ -390,31 +398,16 @@ func (l *Listener) trackLanguage(raw RawKeyEvent) bool {
 	return true
 }
 
-// rememberLanguage congela el idioma en el instante del release, que es cuando
-// se decide, y no cuando el daemon llega a mirarlo.
+// rememberLanguage congela el idioma que quedó elegido cuando soltaste, y no
+// el que esté cuando el daemon llegue a mirarlo.
 func (l *Listener) rememberLanguage() {
 	l.mu.Lock()
-	empty := l.tracker.keys.Empty()
-	l.mu.Unlock()
-	if empty {
-		l.mu.Lock()
-		l.release = LanguageKey{}
-		l.mu.Unlock()
-		return
-	}
-	// Preguntarle a X qué sigue hundido es lo que salva al release que se
-	// perdió; va afuera del candado porque es un viaje al servidor.
-	confirmed, err := l.conn.KeysDown()
-	if err != nil {
-		confirmed = nil
-	}
-	l.mu.Lock()
-	key, ok := l.tracker.current(confirmed)
+	defer l.mu.Unlock()
+	key, ok := l.tracker.current()
 	if !ok {
 		key = LanguageKey{}
 	}
 	l.release = key
-	l.mu.Unlock()
 }
 
 // startLanguages arranca un dictado con la cuenta de teclas de idioma en cero:

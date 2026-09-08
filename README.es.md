@@ -3,7 +3,7 @@
 # dictador
 
 Dictado por voz global para Linux/X11, en Go. Mantené una tecla, hablá, soltala,
-y el texto aparece donde tenías el cursor. Y si al soltar tenías apretada la
+y el texto aparece donde tenías el cursor. Y si mientras hablabas tocaste la
 `e`, aparece en inglés.
 
 Es la reimplementación en Go de [dictado](https://github.com/neitanod/dictado),
@@ -261,26 +261,27 @@ que hace falta para corregir la palabra anterior.
 
 ## Traducción instantánea
 
-Mientras hablás, dejá apretada una letra y soltala junto con la tecla del
-dictado: lo que dijiste se pega traducido. La `e` lo pasa a inglés y la `p` a
-portugués, y las letras y los idiomas los elegís vos.
+Mientras hablás, tocá una letra y lo que dijiste se pega traducido. La `e` lo
+pasa a inglés y la `p` a portugués, y las letras y los idiomas los elegís vos.
 
 ```
-AltGr+Control_R  ────────────────────────────────▶ se pega en castellano
-AltGr+Control_R + e (apretada al soltar)  ───────▶ se pega en inglés
-AltGr+Control_R + p (apretada al soltar)  ───────▶ se pega en portugués
+AltGr+Control_R  ─────────────────────────▶ se pega en castellano
+AltGr+Control_R, tocás la e  ─────────────▶ se pega en inglés
+AltGr+Control_R, tocás la e y la e  ──────▶ se pega en castellano otra vez
+AltGr+Control_R, tocás la e y la p  ──────▶ se pega en portugués
 ```
 
-**Lo que decide es qué tenés apretado en el instante en que soltás.** Podés
-empezar a hablar sin haber decidido nada y apretar la letra sobre el final; y si
-te arrepentiste a mitad de la frase, la soltás y el texto sale como lo dijiste.
-Si probaste con dos, gana la última. Mientras dictás, la ventanita muestra a
-dónde va —"Escuchando · sale en inglés"— así no queda a ciegas.
+**La letra es un interruptor, no un botón que hay que tener hundido.** Un toque
+prende, otro apaga, y otra letra pisa a la anterior: podés empezar a hablar sin
+haber decidido nada y tocarla sobre el final, o arrepentirte a mitad de la frase
+y volver a tocarla. Mientras dictás, la ventanita muestra a dónde va
+—"Escuchando · sale en inglés"— así no queda a ciegas.
+
+**Cada dictado arranca sin idioma.** Lo que elegiste en el anterior no se
+arrastra: un dictado que sale traducido sin que nadie lo pidiera se descubre
+después de pegarlo.
 
 ![La ventanita mientras dictás para traducir](docs/overlay-traduciendo.png)
-
-Soltar todo es un solo movimiento de la mano y los dedos no se levantan
-sincronizados, así que la letra que se fue hasta 300 ms antes cuenta igual.
 
 **La letra no se escribe en ningún lado.** Mientras dura la grabación, esas
 teclas quedan agarradas por el dictador con un grab de X: no llegan a la
@@ -581,13 +582,13 @@ enabled = true             # los comandos hablados: "coma", "entre corchetes"…
 # "dos puntos" = ":"       # los tuyos; un valor vacío apaga uno de fábrica
 
 [translate]
-enabled = true             # traducir según la letra que tengas apretada
+enabled = true             # traducir según la letra que toques mientras hablás
 mode = "web"               # web = como translate.google.com | api = el endpoint
 preview_ms = 1200          # el ratito para leerla y cancelar con Esc
 timeout_s = 20
 
 [translate.keys]
-e = "en"                   # la letra que apretás → el idioma al que va
+e = "en"                   # la letra que tocás → el idioma al que va
 p = "pt"
 ```
 
@@ -609,6 +610,13 @@ el día que un teclado reporte valuadores la conexión X entera queda basura.
 más simple hasta que otra app agarra el teclado y se pierde un release: ese
 modificador queda marcado como apretado para siempre. `QueryKeymap` dice cuáles
 están hundidas de verdad, ahora.
+
+**Con la tecla agarrada, el soltado no vuelve.** La letra que elige el idioma se
+agarra mientras dictás para que no se escape a la app de adelante, y con el
+agarre puesto X entrega el apretón y nunca el soltado. Distinguir un toque nuevo
+del repetido que X manda sola mientras la tenés hundida no se puede hacer
+llevando la cuenta de qué está apretado: se hace con la marca que el propio
+evento trae, que dice si lo generó un dedo o el repetidor.
 
 **El portapapeles es del daemon.** En X, el que copió es el que sirve el
 contenido cuando alguien pega. La versión Python dejaba un `xclip` vivo por

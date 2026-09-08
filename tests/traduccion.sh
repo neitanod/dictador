@@ -2,11 +2,12 @@
 # La letra que elige el idioma, sobre un display virtual.
 #
 # Lo que se mide acá no es la traducción —eso lo prueban los tests de Go contra
-# el traductor de verdad— sino las dos cosas que sólo se ven con un servidor X
-# de por medio: que apretar la letra mientras dictás la detecte, y que esa letra
-# NO llegue a la ventana de adelante. Lo segundo importa más de lo que parece:
-# con el combo apretado, una "e" que se escapa dispara el Ctrl+E de la
-# aplicación, que en un navegador abre la barra de búsqueda.
+# el traductor de verdad— sino las tres cosas que sólo se ven con un servidor X
+# de por medio: que tocar la letra mientras dictás la detecte, que tocarla dos
+# veces la apague, y que esa letra NO llegue a la ventana de adelante. Lo último
+# importa más de lo que parece: con el combo apretado, una "e" que se escapa
+# dispara el Ctrl+E de la aplicación, que en un navegador abre la barra de
+# búsqueda.
 #
 # El motor es Chrome, que es el único que traduce. Sin micrófono no va a
 # entender nada, y no hace falta: la letra se detecta al soltar, antes de que
@@ -96,14 +97,18 @@ e = "en"
 EOF
 }
 
-# dictar mantiene la tecla del dictado, aprieta la letra en el medio, y suelta
-# las dos casi juntas, que es lo que hace la mano.
+# dictar mantiene la tecla del dictado y toca la letra del idioma las veces que
+# se le diga, que es lo que hace la mano: la letra es un interruptor.
 dictar() {
+	local toques="${1:-1}"
 	DISPLAY="$DISPLAY_NUM" xdotool keydown F9
-	sleep 0.6
-	DISPLAY="$DISPLAY_NUM" xdotool keydown e
-	sleep 0.6
-	DISPLAY="$DISPLAY_NUM" xdotool keyup e
+	sleep 0.5
+	local i
+	for ((i = 0; i < toques; i++)); do
+		DISPLAY="$DISPLAY_NUM" xdotool key e
+		sleep 0.3
+	done
+	sleep 0.3
 	DISPLAY="$DISPLAY_NUM" xdotool keyup F9
 	sleep 3
 }
@@ -125,12 +130,12 @@ kill -0 "$DAEMON_PID" 2>/dev/null || {
 	exit 1
 }
 
-dictar
+dictar 1
 
 grep -q "grabando" "$WORK/daemon.log" && ok "detectó el press y empezó a grabar" ||
 	bad "no detectó el press (¿XInput2 raw?)"
 grep -q "va traducido a en" "$WORK/daemon.log" &&
-	ok "la letra apretada al soltar eligió el inglés" ||
+	ok "un toque a la letra eligió el inglés" ||
 	bad "no detectó la letra del idioma"
 
 ESCRITO="$(cat "$WORK/escrito.txt" 2>/dev/null)"
@@ -139,6 +144,14 @@ if [[ "$ESCRITO" == *e* ]]; then
 else
 	ok "la letra no llegó a la ventana de adelante"
 fi
+
+# Y el segundo toque la apaga: el dictado que sigue tiene que salir sin
+# traducir, aunque en el anterior hubieras elegido inglés.
+ANTES="$(grep -c "va traducido a en" "$WORK/daemon.log")"
+dictar 2
+DESPUES="$(grep -c "va traducido a en" "$WORK/daemon.log")"
+[[ "$ANTES" == "$DESPUES" ]] && ok "el segundo toque apagó el idioma" ||
+	bad "dos toques dejaron el idioma prendido igual"
 
 kill "$DAEMON_PID" 2>/dev/null
 wait "$DAEMON_PID" 2>/dev/null

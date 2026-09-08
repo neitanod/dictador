@@ -1,9 +1,6 @@
 package x11
 
-import (
-	"testing"
-	"time"
-)
+import "testing"
 
 // fakeLangKeymap es un teclado con las dos letras que vienen de fábrica.
 func fakeLangKeymap() *Keymap {
@@ -41,6 +38,15 @@ func trackerConTeclas(t *testing.T) *langTracker {
 	return tracker
 }
 
+// idioma es lo que quedó elegido, o "" si no hay ninguno.
+func idioma(t *langTracker) string {
+	key, ok := t.current()
+	if !ok {
+		return ""
+	}
+	return key.Language
+}
+
 func TestLaLetraQueNoEstaEnElTecladoAvisaYNoTumbaAlResto(t *testing.T) {
 	keys, problems := NewLanguageKeys(map[string]string{"e": "en", "ß": "de"}, fakeLangKeymap())
 	if len(problems) != 1 {
@@ -51,93 +57,94 @@ func TestLaLetraQueNoEstaEnElTecladoAvisaYNoTumbaAlResto(t *testing.T) {
 	}
 }
 
-func TestConLaLetraApretadaAlSoltarSeEligeEseIdioma(t *testing.T) {
+// Un toque prende el idioma, y soltar la tecla no lo apaga: es un interruptor,
+// no un botón que hay que tener hundido.
+func TestUnToqueEnciendeElIdioma(t *testing.T) {
 	tracker := trackerConTeclas(t)
-	tracker.press(26)
 
-	key, ok := tracker.current(map[int]bool{26: true})
-	if !ok || key.Language != "en" {
-		t.Fatalf("quería inglés, dio %+v (ok=%v)", key, ok)
+	tracker.press(26, false)
+	if got := idioma(tracker); got != "en" {
+		t.Fatalf("quería inglés, dio %q", got)
 	}
 }
 
-// Probar con una y terminar en otra tiene que quedarse con la última: es lo que
-// hace la mano cuando se arrepiente a mitad de la frase.
-func TestGanaLaUltimaLetraApretada(t *testing.T) {
+// El segundo toque de la misma letra lo apaga.
+func TestElSegundoToqueApaga(t *testing.T) {
 	tracker := trackerConTeclas(t)
-	tracker.press(26)
-	tracker.press(33)
 
-	key, ok := tracker.current(map[int]bool{26: true, 33: true})
-	if !ok || key.Language != "pt" {
-		t.Fatalf("quería portugués, dio %+v (ok=%v)", key, ok)
+	tracker.press(26, false)
+	tracker.press(26, false)
+
+	if got := idioma(tracker); got != "" {
+		t.Fatalf("quería nada, dio %q", got)
 	}
 }
 
-// Soltar el combo y la letra es un solo movimiento, y los dedos no se levantan
-// sincronizados: la letra que se acaba de soltar todavía cuenta.
-func TestLaLetraSoltadaUnInstanteAntesTodaviaCuenta(t *testing.T) {
+// Otra letra pisa a la anterior: estando en inglés, tocar la "p" deja
+// portugués, sin pasar por apagado.
+func TestOtraLetraPisaALaAnterior(t *testing.T) {
 	tracker := trackerConTeclas(t)
-	tracker.press(26)
-	tracker.release(26)
 
-	key, ok := tracker.current(nil)
-	if !ok || key.Language != "en" {
-		t.Fatalf("quería inglés, dio %+v (ok=%v)", key, ok)
+	tracker.press(26, false)
+	tracker.press(33, false)
+
+	if got := idioma(tracker); got != "pt" {
+		t.Fatalf("quería portugués, dio %q", got)
+	}
+	// Y la que ahora apaga es la que está prendida, no la de antes.
+	tracker.press(26, false)
+	if got := idioma(tracker); got != "en" {
+		t.Fatalf("quería inglés, dio %q", got)
 	}
 }
 
-func TestLaLetraSoltadaHaceRatoYaNoCuenta(t *testing.T) {
+// Dejar la tecla hundida hace que X la repita sola. Esos repetidos no son
+// toques: si contaran, el idioma prendería y apagaría treinta veces por
+// segundo y quedaría en cualquiera.
+func TestElAutorrepetidoNoCuentaComoToque(t *testing.T) {
 	tracker := trackerConTeclas(t)
-	tracker.press(26)
-	tracker.release(26)
-	tracker.released[26] = time.Now().Add(-2 * languageGrace)
 
-	if key, ok := tracker.current(nil); ok {
-		t.Fatalf("no tendría que haber idioma, dio %+v", key)
+	tracker.press(26, false)
+	for i := 0; i < 20; i++ {
+		tracker.press(26, true) // X repitiendo mientras el dedo sigue abajo
+	}
+
+	if got := idioma(tracker); got != "en" {
+		t.Fatalf("quería inglés, dio %q", got)
 	}
 }
 
-// El press que no vimos —llegó mientras otra app tenía el teclado agarrado— se
-// recupera preguntándole al servidor X qué sigue hundido.
-func TestLaTeclaQueSoloVeXTambienElige(t *testing.T) {
-	tracker := trackerConTeclas(t)
-
-	key, ok := tracker.current(map[int]bool{33: true})
-	if !ok || key.Language != "pt" {
-		t.Fatalf("quería portugués, dio %+v (ok=%v)", key, ok)
+func TestSinTocarNadaNoSeTraduce(t *testing.T) {
+	if got := idioma(trackerConTeclas(t)); got != "" {
+		t.Fatalf("quería nada, dio %q", got)
 	}
 }
 
-func TestSinNingunaLetraNoSeTraduce(t *testing.T) {
-	tracker := trackerConTeclas(t)
-	if key, ok := tracker.current(nil); ok {
-		t.Fatalf("no tendría que haber idioma, dio %+v", key)
-	}
-}
-
-// Lo que apretaste en el dictado anterior no puede elegir el idioma del que
-// sigue.
+// Lo que elegiste en el dictado anterior no puede colarse en el que sigue:
+// pegar traducido sin querer se descubre después de pegarlo.
 func TestCadaDictadoArrancaSinIdioma(t *testing.T) {
 	tracker := trackerConTeclas(t)
-	tracker.press(26)
+	tracker.press(26, false)
+
 	tracker.reset()
 
-	if key, ok := tracker.current(nil); ok {
-		t.Fatalf("no tendría que haber idioma, dio %+v", key)
+	if got := idioma(tracker); got != "" {
+		t.Fatalf("quería nada, dio %q", got)
+	}
+	tracker.press(26, false)
+	if got := idioma(tracker); got != "en" {
+		t.Fatalf("quería inglés, dio %q", got)
 	}
 }
 
-// El texto en vivo de la ventanita sigue al dedo sin esperar la gracia: soltar
-// la letra mientras hablás quiere decir que ya no querés traducir.
-func TestElCartelEnVivoSigueAlDedo(t *testing.T) {
+// Una tecla que no es de idioma no cambia nada, aunque llegue al tracker.
+func TestUnaTeclaAjenaNoCambiaElIdioma(t *testing.T) {
 	tracker := trackerConTeclas(t)
-	tracker.press(26)
-	if got := tracker.live(); got.Language != "en" {
-		t.Fatalf("quería inglés, dio %+v", got)
-	}
-	tracker.release(26)
-	if got := tracker.live(); got.Language != "" {
-		t.Fatalf("quería nada, dio %+v", got)
+	tracker.press(26, false)
+
+	tracker.press(105, false) // Control_R, que no es de idioma
+
+	if got := idioma(tracker); got != "en" {
+		t.Fatalf("quería inglés, dio %q", got)
 	}
 }

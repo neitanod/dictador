@@ -3,19 +3,15 @@ package x11
 import (
 	"fmt"
 	"sort"
-	"time"
 
 	"github.com/jezek/xgb/xproto"
 )
 
-// Las teclas de idioma son las que eligen a qué se traduce lo que dictaste: con
-// la "e" apretada cuando soltás el combo, el texto se pega en inglés.
+// Las teclas de idioma son las que eligen a qué se traduce lo que dictaste:
+// tocás la "e" mientras hablás y el texto se pega en inglés.
 //
-// Se resuelven contra el mapa de teclado igual que el hotkey, y se miran de dos
-// maneras a la vez porque ninguna sola alcanza: los eventos raw dicen cuál se
-// apretó última —que es la que gana si hay dos— y XQueryKeymap dice cuál sigue
-// hundida de verdad, que es lo único que sobrevive a un release que se perdió
-// mientras otra app tenía el teclado agarrado.
+// Se resuelven contra el mapa de teclado igual que el hotkey, y funcionan como
+// interruptores: un toque prende, otro apaga, y otra letra pisa a la anterior.
 
 // LanguageKeys es la tabla letra → idioma ya resuelta a keycodes.
 type LanguageKeys struct {
@@ -84,101 +80,56 @@ func (lk *LanguageKeys) Lookup(code int) (LanguageKey, bool) {
 	return key, ok
 }
 
-// languageGrace es cuánto sigue valiendo una tecla de idioma después de
-// soltarla.
+// langTracker sigue qué idioma quedó elegido durante un dictado.
 //
-// Soltar el combo y la letra es un solo movimiento de la mano, y los dedos no
-// se levantan sincronizados: sin esta gracia, largar la "e" veinte milisegundos
-// antes que la tecla del dictado pegaba el texto en castellano y parecía que la
-// traducción no funcionaba.
-const languageGrace = 300 * time.Millisecond
-
-// langTracker sigue qué teclas de idioma están en juego durante un dictado.
+// La letra es un interruptor y no un botón que se mantiene: se aprieta una vez
+// y el dictado sale traducido, se aprieta de nuevo y sale como se dijo. Otra
+// letra pisa a la anterior. Empezó al revés —había que tenerla hundida al
+// soltar el combo— y era incómodo de verdad: mantener dos teclas mientras
+// hablás ocupa la mano entera.
 type langTracker struct {
-	keys     *LanguageKeys
-	seq      int
-	down     map[int]int       // keycode → orden en que se apretó
-	released map[int]time.Time // keycode → cuándo se soltó
+	keys *LanguageKeys
+	// elegido es el idioma prendido ahora mismo, o vacío si no hay ninguno.
+	elegido LanguageKey
 }
 
-func newLangTracker() *langTracker {
-	return &langTracker{down: map[int]int{}, released: map[int]time.Time{}}
-}
+func newLangTracker() *langTracker { return &langTracker{} }
 
-// reset borra lo visto: arranca un dictado nuevo.
+// reset borra lo elegido: arranca un dictado nuevo.
+//
+// Cada dictado empieza sin idioma a propósito. Arrastrar el del anterior haría
+// que un dictado saliera traducido sin que nadie lo pidiera, y eso se descubre
+// después de pegarlo.
 func (t *langTracker) reset() {
-	t.seq = 0
-	clear(t.down)
-	clear(t.released)
+	t.elegido = LanguageKey{}
 }
 
-func (t *langTracker) press(code int) {
-	t.seq++
-	t.down[code] = t.seq
-	delete(t.released, code)
-}
-
-func (t *langTracker) release(code int) {
-	if _, ok := t.down[code]; !ok {
+// press es un toque de una tecla de idioma: prende, apaga o cambia.
+//
+// Los que vienen marcados como repetidos se ignoran. X los manda solo mientras
+// mantenés la tecla hundida, y contarlos prendería y apagaría el idioma treinta
+// veces por segundo. Que se sepan repetidos por la marca del evento y no por
+// llevar la cuenta de qué está apretado es lo único que funciona acá: mientras
+// dura el dictado tenemos la tecla agarrada, y con el agarre puesto el release
+// no vuelve nunca.
+func (t *langTracker) press(code int, repetido bool) {
+	if repetido {
 		return
 	}
-	delete(t.down, code)
-	t.released[code] = time.Now()
+	key, ok := t.keys.Lookup(code)
+	if !ok {
+		return
+	}
+	if t.elegido.Key == key.Key {
+		t.elegido = LanguageKey{} // el mismo interruptor, apagado
+		return
+	}
+	t.elegido = key
 }
 
-// current es la tecla de idioma que manda ahora mismo, con lo que vimos por
-// eventos y lo que confirme el servidor X.
-//
-// Gana la última apretada: si probaste con la "e" y terminaste en la "p", vale
-// la "p".
-func (t *langTracker) current(confirmed map[int]bool) (LanguageKey, bool) {
-	best, bestSeq := LanguageKey{}, -1
-	consider := func(code, seq int) {
-		key, ok := t.keys.Lookup(code)
-		if !ok || seq <= bestSeq {
-			return
-		}
-		best, bestSeq = key, seq
-	}
-	for code, seq := range t.down {
-		consider(code, seq)
-	}
-	// Una tecla que X reporta hundida y nosotros no vimos apretar —el press se
-	// perdió, o venía de antes del dictado— vale igual, y como no sabemos su
-	// orden va última: es la que el usuario tiene el dedo encima ahora.
-	for code := range confirmed {
-		if _, seen := t.down[code]; seen {
-			continue
-		}
-		consider(code, t.seq+1)
-	}
-	if bestSeq >= 0 {
-		return best, true
-	}
-	// Nada apretado: la que se acaba de soltar todavía cuenta.
-	var newest time.Time
-	for code, when := range t.released {
-		if time.Since(when) > languageGrace || !when.After(newest) {
-			continue
-		}
-		if key, ok := t.keys.Lookup(code); ok {
-			best, newest = key, when
-		}
-	}
-	return best, best.Language != ""
-}
-
-// live es lo mismo pero sin preguntarle a X ni esperar la gracia: es lo que se
-// dibuja en la ventanita mientras hablás, y ahí lo que importa es que siga al
-// dedo en el momento.
-func (t *langTracker) live() LanguageKey {
-	best, bestSeq := LanguageKey{}, -1
-	for code, seq := range t.down {
-		if key, ok := t.keys.Lookup(code); ok && seq > bestSeq {
-			best, bestSeq = key, seq
-		}
-	}
-	return best
+// current es el idioma con el que se va a traducir este dictado.
+func (t *langTracker) current() (LanguageKey, bool) {
+	return t.elegido, t.elegido.Language != ""
 }
 
 // GrabKeys se queda con esas teclas: mientras dure el grab, apretarlas no llega
