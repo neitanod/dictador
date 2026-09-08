@@ -10,8 +10,8 @@
 # búsqueda.
 #
 # El motor es Chrome, que es el único que traduce. Sin micrófono no va a
-# entender nada, y no hace falta: la letra se detecta al soltar, antes de que
-# haya texto.
+# entender nada, y no hace falta: lo que se mira es qué idioma quedó elegido,
+# que se decide mientras hablás y no depende de que haya texto.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
